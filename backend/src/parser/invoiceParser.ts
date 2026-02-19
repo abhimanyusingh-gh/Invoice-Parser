@@ -1,0 +1,470 @@
+import type { ParsedInvoiceData } from "../types/invoice.js";
+import { toMinorUnits } from "../utils/currency.js";
+
+export interface ParseResult {
+  parsed: ParsedInvoiceData;
+  warnings: string[];
+}
+
+const invoiceNumberPatterns = [
+  /invoice\s*(?:number|no\.?|#)\s*[:\-]?\s*([A-Z0-9][A-Z0-9_\-/]{2,})/i,
+  /bill\s*(?:number|no\.?|#)\s*[:\-]?\s*([A-Z0-9][A-Z0-9_\-/]{2,})/i,
+  /inv(?:oice)?\s*(?:number|no\.?|#)\s*[:\-]?\s*([A-Z0-9][A-Z0-9_\-/]{2,})/i,
+  /(?:invoice|factuur|facture)\s*(?:number|nummer|no\.?|#|n[°o])\s*[:\-]?\s*#?\s*([A-Z0-9][A-Z0-9_\-/]{2,})/i
+];
+
+const vendorPattern = /(?:vendor|supplier|from|bill\s*from|sold\s*by)\s*[:\-]?\s*([^\n\r]+)/i;
+const vendorRefinementPattern = /^(?:vendor|supplier|from|bill\s*from|sold\s*by)\s*[:\-]?\s*/i;
+const legalEntityPattern =
+  /\b(ltd|limited|pvt|private|llc|inc|corp|corporation|gmbh|s\.?a\.?r\.?l\.?|plc|pte|company|co\.?)\b/i;
+const addressSignalPattern =
+  /\b(address|warehouse|village|road|street|st\.|avenue|ave\.|taluk|district|state|country|india|karnataka|hobli|zip|zipcode|postal|pin|near)\b/i;
+const nonVendorSignalPattern =
+  /\b(invoice|bill|date|total|tax|amount|qty|quantity|gst|vat|phone|email|mobile|bank|ifsc|swift|branch)\b/i;
+
+const currencyPatterns = [
+  /\b(USD|EUR|GBP|INR|AUD|CAD|JPY|AED|SGD|CHF|CNY)\b/i,
+  /([$€£₹])/g
+];
+const currencyBySymbol: Record<string, string> = {
+  $: "USD",
+  "€": "EUR",
+  "£": "GBP",
+  "₹": "INR"
+};
+
+const datePatterns = [
+  /(?:invoice\s*date|bill\s*date|date)\s*[:\-]?\s*([0-3]?\d[\/.-][01]?\d[\/.-](?:\d{4}|\d{2}))/i,
+  /(?:invoice\s*date|bill\s*date|date)\s*[:\-]?\s*([A-Za-z]{3,9}\s+[0-3]?\d,?\s+\d{4})/i
+];
+
+const dueDatePatterns = [
+  /(?:due\s*date|payment\s*due)\s*[:\-]?\s*([0-3]?\d[\/.-][01]?\d[\/.-](?:\d{4}|\d{2}))/i,
+  /(?:due\s*date|payment\s*due)\s*[:\-]?\s*([A-Za-z]{3,9}\s+[0-3]?\d,?\s+\d{4})/i
+];
+
+const strongTotalPattern =
+  /(grand\s*total|amount\s*payable|amount\s*due|balance\s*due|total\s*due|invoice\s*total|net\s*payable|total\s*payable)/i;
+const weakTotalPattern = /\b(total|payable|balance)\b/i;
+const negativeTotalPattern =
+  /(sub\s*total|subtotal|tax(?:able)?|vat|gst|cgst|sgst|igst|discount|round(?:ing)?\s*off|shipping|freight|delivery|paid|payment\s*received|advance|credit\s*note)/i;
+const amountTokenPattern = /[-+]?(?:\d{1,3}(?:[,\s.]\d{3})+|\d+)(?:[.,]\d{1,2})?/g;
+
+export function parseInvoiceText(text: string): ParseResult {
+  const warnings: string[] = [];
+  const parsed: ParsedInvoiceData = {
+    notes: []
+  };
+
+  const compactText = text.replace(/\r/g, "\n");
+
+  parsed.invoiceNumber = findFirstMatch(compactText, invoiceNumberPatterns);
+  if (!parsed.invoiceNumber) {
+    warnings.push("Could not confidently detect invoice number.");
+  }
+
+  parsed.vendorName = resolveVendorName(compactText);
+  if (!parsed.vendorName) {
+    warnings.push("Could not confidently detect vendor name.");
+  }
+
+  parsed.currency = extractCurrency(compactText);
+  if (!parsed.currency) {
+    warnings.push("Could not confidently detect currency.");
+  }
+
+  const totalAmount = extractTotalAmount(compactText);
+  if (totalAmount === undefined) {
+    warnings.push("Could not confidently detect total amount.");
+  } else {
+    parsed.totalAmountMinor = toMinorUnits(totalAmount, parsed.currency);
+  }
+
+  const invoiceDateRaw = findFirstMatch(compactText, datePatterns);
+  if (invoiceDateRaw) {
+    parsed.invoiceDate = normalizeDate(invoiceDateRaw) ?? invoiceDateRaw;
+  }
+
+  const dueDateRaw = findFirstMatch(compactText, dueDatePatterns);
+  if (dueDateRaw) {
+    parsed.dueDate = normalizeDate(dueDateRaw) ?? dueDateRaw;
+  }
+
+  return {
+    parsed,
+    warnings
+  };
+}
+
+export function extractTotalAmount(text: string): number | undefined {
+  const lines = text
+    .replace(/\r/g, "\n")
+    .split(/\n+/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  if (lines.length === 0) {
+    return undefined;
+  }
+
+  const labeledCandidates: AmountCandidate[] = [];
+  for (const [index, line] of lines.entries()) {
+    const values = extractAmountValuesFromLine(line);
+    if (values.length === 0) {
+      continue;
+    }
+
+    const baseScore = scoreLineForLabeledAmount(line, index, lines.length);
+    if (baseScore <= 0) {
+      continue;
+    }
+
+    for (const value of values) {
+      labeledCandidates.push({
+        amount: value,
+        score: baseScore + scoreAmountMagnitude(value),
+        lineIndex: index
+      });
+    }
+  }
+
+  if (labeledCandidates.length > 0) {
+    return pickBestAmountCandidate(labeledCandidates)?.amount;
+  }
+
+  const fallbackCandidates: AmountCandidate[] = [];
+  for (const [index, line] of lines.entries()) {
+    if (negativeTotalPattern.test(line)) {
+      continue;
+    }
+
+    const values = extractAmountValuesFromLine(line);
+    if (values.length === 0) {
+      continue;
+    }
+
+    const positionBonus = [0, 8][Number(index >= Math.floor(lines.length * 0.6))];
+    for (const value of values) {
+      fallbackCandidates.push({
+        amount: value,
+        score: positionBonus + scoreAmountMagnitude(value),
+        lineIndex: index
+      });
+    }
+  }
+
+  return pickBestAmountCandidate(fallbackCandidates)?.amount;
+}
+
+function findFirstMatch(text: string, patterns: RegExp[]): string | undefined {
+  for (const pattern of patterns) {
+    const match = text.match(pattern);
+    if (match?.[1]) {
+      return match[1].trim();
+    }
+  }
+
+  return undefined;
+}
+
+function resolveVendorName(text: string): string | undefined {
+  const explicitMatch = findFirstMatch(text, [vendorPattern]);
+  const explicitCandidate = sanitizeVendorCandidate(explicitMatch);
+  if (explicitCandidate) {
+    return explicitCandidate;
+  }
+
+  return pickLikelyVendorLine(text);
+}
+
+function pickLikelyVendorLine(text: string): string | undefined {
+  const lines = text
+    .split(/\n+/)
+    .map((line) => line.trim())
+    .filter((line) => line.length > 2);
+
+  const scopedLines = lines.slice(0, 16);
+  let bestCandidate: { value: string; score: number } | null = null;
+
+  for (const [index, rawLine] of scopedLines.entries()) {
+    const candidate = sanitizeVendorCandidate(rawLine);
+    if (!candidate) {
+      continue;
+    }
+
+    let score = 0;
+    if (index <= 3) {
+      score += 28;
+    } else if (index <= 8) {
+      score += 16;
+    } else {
+      score += 6;
+    }
+
+    if (legalEntityPattern.test(candidate)) {
+      score += 20;
+    }
+
+    if (/^[A-Z0-9&.,'()/\-\s]+$/.test(candidate)) {
+      score += 8;
+    }
+
+    const wordCount = candidate.split(/\s+/).length;
+    if (wordCount >= 2 && wordCount <= 8) {
+      score += 8;
+    }
+
+    if (candidate.includes(",")) {
+      score -= 6;
+    }
+
+    const digitCount = (candidate.match(/\d/g) ?? []).length;
+    if (digitCount > 4) {
+      score -= 20;
+    } else if (digitCount > 0) {
+      score -= 8;
+    }
+
+    if (candidate.length > 72) {
+      score -= 14;
+    }
+
+    if (bestCandidate === null || score > bestCandidate.score) {
+      bestCandidate = { value: candidate, score };
+    }
+  }
+
+  if (!bestCandidate || bestCandidate.score < 10) {
+    return undefined;
+  }
+
+  return bestCandidate.value;
+}
+
+function sanitizeVendorCandidate(rawValue?: string): string | undefined {
+  if (!rawValue) {
+    return undefined;
+  }
+
+  const normalized = rawValue
+    .replace(vendorRefinementPattern, "")
+    .replace(/\s+/g, " ")
+    .replace(/^[^A-Za-z]+/, "")
+    .replace(/[,:;.\-–|]+$/, "")
+    .trim();
+
+  if (normalized.length < 3) {
+    return undefined;
+  }
+
+  if (addressSignalPattern.test(normalized)) {
+    return undefined;
+  }
+
+  if (nonVendorSignalPattern.test(normalized)) {
+    return undefined;
+  }
+
+  if (normalized.split(",").length > 3) {
+    return undefined;
+  }
+
+  return normalized;
+}
+
+function extractCurrency(text: string): string | undefined {
+  const codeMatch = text.match(currencyPatterns[0]);
+  if (codeMatch?.[1]) {
+    return codeMatch[1].toUpperCase();
+  }
+
+  if (/\bRs\.?\b/i.test(text)) {
+    return "INR";
+  }
+
+  const symbolMatch = text.match(currencyPatterns[1]);
+  if (!symbolMatch?.[0]) {
+    return undefined;
+  }
+
+  return currencyBySymbol[symbolMatch[0]];
+}
+
+function normalizeDate(input: string): string | undefined {
+  const sanitized = input.replace(/,/g, "").trim();
+  const parsed = new Date(sanitized);
+  if (!Number.isNaN(parsed.valueOf())) {
+    return parsed.toISOString().slice(0, 10);
+  }
+
+  const dayFirst = sanitized.match(/^(\d{1,2})[\/.\-](\d{1,2})[\/.\-](\d{4}|\d{2})$/);
+  if (!dayFirst) {
+    return undefined;
+  }
+
+  const day = dayFirst[1].padStart(2, "0");
+  const month = dayFirst[2].padStart(2, "0");
+  const rawYear = dayFirst[3];
+  const year = rawYear.length === 2 ? `20${rawYear}` : rawYear;
+
+  return `${year}-${month}-${day}`;
+}
+
+interface AmountCandidate {
+  amount: number;
+  score: number;
+  lineIndex: number;
+}
+
+function scoreLineForLabeledAmount(line: string, lineIndex: number, totalLines: number): number {
+  let score = 0;
+
+  if (strongTotalPattern.test(line)) {
+    score += 120;
+  } else if (weakTotalPattern.test(line)) {
+    score += 55;
+  }
+
+  if (negativeTotalPattern.test(line)) {
+    score -= 85;
+  }
+
+  if (/[€£$₹]|(?:\bUSD\b|\bEUR\b|\bGBP\b|\bINR\b)/i.test(line)) {
+    score += 6;
+  }
+
+  if (lineIndex >= Math.floor(totalLines * 0.6)) {
+    score += 8;
+  }
+
+  if (/%/.test(line)) {
+    score -= 12;
+  }
+
+  return score;
+}
+
+function pickBestAmountCandidate(candidates: AmountCandidate[]): AmountCandidate | undefined {
+  if (candidates.length === 0) {
+    return undefined;
+  }
+
+  return [...candidates].sort((left, right) => {
+    if (right.score !== left.score) {
+      return right.score - left.score;
+    }
+
+    if (right.amount !== left.amount) {
+      return right.amount - left.amount;
+    }
+
+    return right.lineIndex - left.lineIndex;
+  })[0];
+}
+
+function extractAmountValuesFromLine(line: string): number[] {
+  const normalized = line.replace(/\u00A0/g, " ").replace(/\s+/g, " ");
+  const rawTokens = normalized.match(amountTokenPattern) ?? [];
+  const tokens = rawTokens.flatMap(splitConcatenatedAmountToken);
+
+  const values = tokens
+    .map((token) => parseAmountToken(token))
+    .filter((value): value is number => value !== null)
+    .filter((value) => value > 0);
+
+  return values;
+}
+
+function splitConcatenatedAmountToken(token: string): string[] {
+  const compact = token.replace(/\s+/g, "");
+
+  if (/^\d+\.\d{2}(?:\d+\.\d{2})+$/.test(compact)) {
+    return compact.match(/\d+\.\d{2}/g) as string[];
+  }
+
+  if (/^\d+,\d{2}(?:\d+,\d{2})+$/.test(compact)) {
+    return compact.match(/\d+,\d{2}/g) as string[];
+  }
+
+  return [token];
+}
+
+function parseAmountToken(token: string): number | null {
+  const raw = token.replace(/[^0-9,.\-+]/g, "");
+  const sign = raw.startsWith("-") ? -1 : 1;
+  let working = raw.replace(/^[-+]/, "");
+
+  const commaCount = (working.match(/,/g) ?? []).length;
+  const dotCount = (working.match(/\./g) ?? []).length;
+
+  if (commaCount > 0 && dotCount > 0) {
+    const lastComma = working.lastIndexOf(",");
+    const lastDot = working.lastIndexOf(".");
+    if (lastDot > lastComma) {
+      working = working.replace(/,/g, "");
+    } else {
+      working = working.replace(/\./g, "").replace(/,/g, ".");
+    }
+  } else if (commaCount > 0) {
+    const parts = working.split(",");
+    const fraction = parts[parts.length - 1];
+    if (parts.length > 1 && fraction.length <= 2) {
+      working = `${parts.slice(0, -1).join("")}.${fraction}`;
+    } else {
+      working = parts.join("");
+    }
+  } else if (dotCount > 1) {
+    const parts = working.split(".");
+    const fraction = parts[parts.length - 1];
+    if (fraction.length <= 2) {
+      working = `${parts.slice(0, -1).join("")}.${fraction}`;
+    } else {
+      working = parts.join("");
+    }
+  } else if (dotCount === 1) {
+    const parts = working.split(".");
+    const fraction = parts[1];
+    if (fraction.length === 3 && parts[0].length >= 1) {
+      working = parts.join("");
+    }
+  }
+
+  const parsed = Number(working);
+  if (!Number.isFinite(parsed)) {
+    return null;
+  }
+
+  return Number((Math.abs(sign * parsed)).toFixed(2));
+}
+
+function scoreAmountMagnitude(amount: number): number {
+  let score = 0;
+
+  if (!Number.isInteger(amount)) {
+    score += 6;
+  }
+
+  if (Number.isInteger(amount) && amount >= 1900 && amount <= 2100) {
+    score -= 18;
+  }
+
+  if (Number.isInteger(amount) && amount >= 100_000) {
+    score -= 25;
+  }
+
+  if (amount >= 1_000_000) {
+    score -= 8;
+  }
+
+  if (amount >= 10_000) {
+    score += 6;
+  } else if (amount >= 100) {
+    score += 4;
+  } else if (amount >= 1) {
+    score += 1;
+  } else {
+    score -= 5;
+  }
+
+  return score;
+}
