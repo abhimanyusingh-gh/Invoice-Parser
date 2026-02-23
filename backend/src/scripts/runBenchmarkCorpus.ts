@@ -1,17 +1,15 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import mongoose from "mongoose";
-import { env } from "../config/env.js";
 import type { OcrProvider } from "../core/interfaces/OcrProvider.js";
 import { CheckpointModel } from "../models/Checkpoint.js";
 import { InvoiceModel } from "../models/Invoice.js";
-import { GoogleVisionOcrProvider } from "../ocr/GoogleVisionOcrProvider.js";
 import { MockOcrProvider } from "../ocr/MockOcrProvider.js";
-import { TesseractOcrProvider } from "../ocr/TesseractOcrProvider.js";
 import { DeepSeekOcrProvider } from "../ocr/DeepSeekOcrProvider.js";
 import { IngestionService } from "../services/ingestionService.js";
 import { FolderIngestionSource } from "../sources/FolderIngestionSource.js";
 import { toMinorUnits } from "../utils/currency.js";
+import { loadRuntimeManifest, type RuntimeManifest } from "../core/runtimeManifest.js";
 
 interface GroundTruthRecord {
   amount?: number;
@@ -22,22 +20,34 @@ interface GroundTruthRecord {
 async function main() {
   const benchmarkRoot = resolveBenchmarkRoot();
   const groundTruthRoot = path.resolve(benchmarkRoot, "..", "ground-truth", "invoice2data");
-  const ocrProvider = createOcrProvider(env.OCR_PROVIDER);
+  const runtimeManifest = loadRuntimeManifest();
+  const ocrProvider = createOcrProvider(runtimeManifest);
 
-  await mongoose.connect(env.MONGO_URI);
+  await mongoose.connect(runtimeManifest.database.uri);
   try {
-    await InvoiceModel.deleteMany({ sourceKey: "benchmark-corpus" });
-    await CheckpointModel.deleteMany({ sourceKey: "benchmark-corpus" });
+    await InvoiceModel.deleteMany({
+      sourceKey: "benchmark-corpus",
+      tenantId: runtimeManifest.defaultTenantId
+    });
+    await CheckpointModel.deleteMany({
+      sourceKey: "benchmark-corpus",
+      tenantId: runtimeManifest.defaultTenantId
+    });
 
     const source = new FolderIngestionSource({
       key: "benchmark-corpus",
+      tenantId: runtimeManifest.defaultTenantId,
+      workloadTier: "heavy",
       folderPath: benchmarkRoot,
       recursive: false
     });
 
     const ingestionService = new IngestionService([source], ocrProvider);
     const runSummary = await ingestionService.runOnce();
-    const invoices = await InvoiceModel.find({ sourceKey: "benchmark-corpus" }).lean();
+    const invoices = await InvoiceModel.find({
+      sourceKey: "benchmark-corpus",
+      tenantId: runtimeManifest.defaultTenantId
+    }).lean();
 
     const statusCounts = countStatuses(invoices.map((invoice) => invoice.status));
     const confidenceScores = invoices
@@ -55,7 +65,7 @@ async function main() {
       JSON.stringify(
         {
           corpusPath: benchmarkRoot,
-          ocrProvider: env.OCR_PROVIDER,
+          ocrProvider: runtimeManifest.ocr.provider,
           runSummary,
           totals: {
             invoices: invoices.length,
@@ -94,24 +104,20 @@ function resolveBenchmarkRoot(): string {
   return cwdCandidate;
 }
 
-function createOcrProvider(ocrProviderName: string): OcrProvider {
-  if (ocrProviderName === "google-vision") {
-    return new GoogleVisionOcrProvider();
+function createOcrProvider(runtimeManifest: RuntimeManifest): OcrProvider {
+  if (runtimeManifest.ocr.provider === "deepseek" || runtimeManifest.ocr.provider === "auto") {
+    return new DeepSeekOcrProvider({
+      apiKey: runtimeManifest.ocr.deepseek.apiKey,
+      baseUrl: runtimeManifest.ocr.deepseek.baseUrl,
+      model: runtimeManifest.ocr.deepseek.model,
+      timeoutMs: runtimeManifest.ocr.deepseek.timeoutMs
+    });
   }
 
-  if (ocrProviderName === "deepseek") {
-    return new DeepSeekOcrProvider();
-  }
-
-  if (ocrProviderName === "tesseract") {
-    return new TesseractOcrProvider();
-  }
-
-  if (ocrProviderName === "auto") {
-    return new TesseractOcrProvider();
-  }
-
-  return new MockOcrProvider();
+  return new MockOcrProvider({
+    text: runtimeManifest.ocr.mock.text,
+    confidence: runtimeManifest.ocr.mock.confidence
+  });
 }
 
 function countStatuses(statuses: string[]): Record<string, number> {

@@ -1,0 +1,66 @@
+aws_region   = "us-east-1"
+project_name = "invoice-processor-prod"
+
+vpc_id     = "vpc-xxxxxxxx"
+subnet_ids = ["subnet-aaaaaaa", "subnet-bbbbbbb"]
+
+instance_type = "t3.small"
+app_image     = "123456789012.dkr.ecr.us-east-1.amazonaws.com/invoice-processor-backend:prod"
+
+# Production path: always provision and use module-managed DocumentDB.
+provision_documentdb = true
+mongo_uri            = ""
+
+documentdb_allowed_cidrs         = ["10.0.0.0/16"]
+documentdb_master_username       = "invoice_admin"
+documentdb_master_password       = "replace-with-strong-password"
+documentdb_db_name               = "invoice_processor"
+documentdb_engine_version        = "5.0.0"
+documentdb_instance_class        = "db.t3.medium"
+documentdb_instance_count        = 1
+documentdb_backup_retention_period = 7
+documentdb_preferred_backup_window = "07:00-09:00"
+documentdb_storage_encrypted     = true
+documentdb_deletion_protection   = true
+documentdb_skip_final_snapshot   = false
+documentdb_apply_immediately     = true
+
+ingestion_sources = "email"
+email_source_key  = "ap-inbox"
+email_host        = "imap.gmail.com"
+email_port        = 993
+email_secure      = true
+email_username    = "ap-team@example.com"
+email_password    = "replace-with-app-password"
+email_mailbox     = "INBOX"
+email_from_filter = ""
+
+ocr_provider = "deepseek"
+confidence_expected_max_total    = 100000
+confidence_expected_max_due_days = 90
+confidence_auto_select_min       = 91
+
+tally_endpoint        = "http://tally.internal:9000"
+tally_company         = "My Company Pvt Ltd"
+tally_purchase_ledger = "Purchase"
+
+schedule_scale_up_cron   = "0 1 * * *"
+schedule_scale_down_cron = "30 1 * * *"
+
+api_ingress_cidrs = ["10.0.0.0/16"]
+
+extra_env = {
+  DEEPSEEK_BASE_URL   = "http://your-deepseek-endpoint:12434/engines/v1"
+  DEEPSEEK_OCR_MODEL  = "deepseek-ai/DeepSeek-OCR"
+  DEEPSEEK_TIMEOUT_MS = "45000"
+  # DEEPSEEK_API_KEY  = "set-only-if-endpoint-requires-auth"
+}
+
+app_manifest = {
+  ingestion_sources = "email"
+  ocr_provider      = "deepseek"
+  env = {
+    DEFAULT_TENANT_ID     = "tenant-default"
+    DEFAULT_WORKLOAD_TIER = "standard"
+  }
+}

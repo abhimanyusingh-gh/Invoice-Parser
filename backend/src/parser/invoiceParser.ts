@@ -350,10 +350,6 @@ function pickLikelyVendorLine(lines: string[]): string | undefined {
       score -= 28;
     }
 
-    if (blockedVendorPrefixPattern.test(candidate)) {
-      score -= 40;
-    }
-
     if (candidate.includes(":")) {
       score -= 20;
     }
@@ -370,11 +366,7 @@ function pickLikelyVendorLine(lines: string[]): string | undefined {
   return bestCandidate.value;
 }
 
-function sanitizeVendorCandidate(rawValue?: string, options?: { allowSingleWord?: boolean }): string | undefined {
-  if (!rawValue) {
-    return undefined;
-  }
-
+function sanitizeVendorCandidate(rawValue: string, options?: { allowSingleWord?: boolean }): string | undefined {
   const normalized = rawValue
     .replace(vendorRefinementPattern, "")
     .replace(/^[^:]+:\s*/g, (prefix) => (blockedVendorPrefixPattern.test(prefix) ? "" : prefix))
