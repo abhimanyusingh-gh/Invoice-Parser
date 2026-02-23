@@ -11,7 +11,7 @@ const SUPPORTED_MIME_TYPES = new Set([
   "application/pdf"
 ]);
 const RETRYABLE_NETWORK_ERROR_CODES = new Set(["ECONNREFUSED", "ECONNRESET", "ETIMEDOUT", "EHOSTUNREACH"]);
-const DEFAULT_PROMPT = "<image>\n<|grounding|>Extract each readable text block verbatim in reading order.";
+const DEFAULT_PROMPT = "<image>\n<|grounding|>Convert page to markdown.";
 const DEFAULT_MAX_TOKENS = 512;
 const DEFAULT_TIMEOUT_MS = 3_600_000;
 
@@ -83,7 +83,7 @@ export class DeepSeekOcrProvider implements OcrProvider {
     const requestBody = {
       model: this.model,
       document: `data:${mimeType};base64,${buffer.toString("base64")}`,
-      includeLayout: mimeType !== "application/pdf",
+      includeLayout: true,
       prompt: this.prompt,
       maxTokens: this.maxTokens
     };

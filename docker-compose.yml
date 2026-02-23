@@ -8,10 +8,6 @@ services:
     depends_on:
       mongo:
         condition: service_started
-      deepseek-ocr:
-        condition: service_healthy
-      slm-verifier:
-        condition: service_healthy
     env_file:
       - path: ./backend/.env.example
         required: true
@@ -28,12 +24,13 @@ services:
       FOLDER_SOURCE_KEY: local-folder
       FOLDER_SOURCE_PATH: /app/sample-invoices/inbox
       FOLDER_RECURSIVE: "false"
-      DEEPSEEK_BASE_URL: http://deepseek-ocr:8000/v1
+      DEEPSEEK_BASE_URL: ${DEEPSEEK_BASE_URL:-http://host.docker.internal:8000/v1}
       DEEPSEEK_OCR_MODEL: deepseek-ai/DeepSeek-OCR
+      DEEPSEEK_OCR_MAX_TOKENS: "256"
       DEEPSEEK_TIMEOUT_MS: "3600000"
       OCR_HIGH_CONFIDENCE_THRESHOLD: "0.92"
       FIELD_VERIFIER_PROVIDER: http
-      FIELD_VERIFIER_BASE_URL: http://slm-verifier:8100/v1
+      FIELD_VERIFIER_BASE_URL: ${FIELD_VERIFIER_BASE_URL:-http://host.docker.internal:8100/v1}
       FIELD_VERIFIER_TIMEOUT_MS: "20000"
       CONFIDENCE_EXPECTED_MAX_TOTAL: "100000"
       CONFIDENCE_EXPECTED_MAX_DUE_DAYS: "90"
@@ -43,44 +40,8 @@ services:
       TALLY_PURCHASE_LEDGER: Purchase
     volumes:
       - ./sample-invoices/inbox:/app/sample-invoices/inbox
-
-  deepseek-ocr:
-    build:
-      context: .
-      dockerfile: deepseek-ocr/Dockerfile
-    container_name: invoice-processor-deepseek-ocr
-    restart: unless-stopped
-    environment:
-      OCR_MODEL_ID: ${OCR_MODEL_ID:-deepseek-ai/DeepSeek-OCR}
-      OCR_DEVICE: ${OCR_DEVICE:-cpu}
-      OCR_TORCH_DTYPE: ${OCR_TORCH_DTYPE:-bfloat16}
-      OCR_MAX_NEW_TOKENS: ${OCR_MAX_NEW_TOKENS:-512}
-      OCR_LOAD_ON_STARTUP: ${OCR_LOAD_ON_STARTUP:-false}
-    volumes:
-      - deepseek_ocr_cache:/models
-    ports:
-      - "8000:8000"
-    healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=2).read()"]
-      interval: 10s
-      timeout: 5s
-      retries: 12
-      start_period: 20s
-
-  slm-verifier:
-    build:
-      context: .
-      dockerfile: slm-verifier/Dockerfile
-    container_name: invoice-processor-slm-verifier
-    restart: unless-stopped
-    ports:
-      - "8100:8100"
-    healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8100/health', timeout=2).read()"]
-      interval: 10s
-      timeout: 5s
-      retries: 12
-      start_period: 10s
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
 
   frontend:
     build:
@@ -120,4 +81,3 @@ services:
 
 volumes:
   mongo_data:
-  deepseek_ocr_cache:

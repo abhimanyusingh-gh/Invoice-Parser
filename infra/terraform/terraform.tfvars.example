@@ -53,8 +53,9 @@ api_ingress_cidrs = ["10.0.0.0/16"]
 
 extra_env = {
   PORT               = "4000"
-  DEEPSEEK_BASE_URL  = "http://your-deepseek-ocr-endpoint:8000/v1"
+  DEEPSEEK_BASE_URL  = "http://your-invoice-ocr-endpoint:8000/v1"
   DEEPSEEK_OCR_MODEL = "deepseek-ai/DeepSeek-OCR"
+  FIELD_VERIFIER_BASE_URL = "http://your-invoice-slm-endpoint:8100/v1"
   # DEEPSEEK_API_KEY = "set-only-if-endpoint-requires-auth"
 }
 

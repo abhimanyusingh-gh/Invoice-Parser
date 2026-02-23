@@ -55,4 +55,25 @@ describe("validateInvoiceFields", () => {
     expect(result.issues).toContain("Total amount exceeds configured expected maximum.");
     expect(result.issues).toContain("Due date is earlier than invoice date.");
   });
+
+  it("flags impossible VAT and unsupported total precision", () => {
+    const result = validateInvoiceFields({
+      parsed: {
+        invoiceNumber: "INV-778",
+        vendorName: "ACME Corp",
+        currency: "USD",
+        totalAmountMinor: 1000
+      },
+      ocrText: [
+        "VAT: 50.00",
+        "Grand Total: 10.123"
+      ].join("\n"),
+      expectedMaxTotal: 100000,
+      expectedMaxDueDays: 90
+    });
+
+    expect(result.valid).toBe(false);
+    expect(result.issues).toContain("Detected VAT/tax value exceeds invoice total.");
+    expect(result.issues).toContain("Detected total amount with unsupported decimal precision.");
+  });
 });

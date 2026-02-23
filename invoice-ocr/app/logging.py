@@ -4,7 +4,7 @@ import json
 import logging
 import sys
 
-SERVICE_NAME = "deepseek-ocr"
+SERVICE_NAME = "invoice-ocr"
 _correlation_id: ContextVar[str] = ContextVar("correlation_id", default="")
 
 

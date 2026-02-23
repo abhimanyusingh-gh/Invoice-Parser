@@ -26,7 +26,8 @@ Build a minimal, modular application that ingests invoices, extracts structured 
 
 2. OCR and Extraction
 - OCR provider abstraction with reliable handwriting-capable provider support.
-- Initial OCR runtime: local DeepSeek OCR service with default model `deepseek-ai/DeepSeek-OCR`.
+- Local OCR runtime: MLX-based DeepSeek OCR service with default model `deepseek-ai/DeepSeek-OCR`.
+- Production OCR runtime: external OCR endpoint through the same OCR interface.
 - No Tesseract fallback in runtime.
 - Agentic extraction flow: evaluate multiple text candidates and select best parse.
 - Extract core fields: invoice number, vendor, dates, currency, total amount.

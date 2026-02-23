@@ -88,9 +88,9 @@ describe("DeepSeekOcrProvider", () => {
     expect(post).toHaveBeenCalledTimes(1);
   });
 
-  it("sets includeLayout=false for pdf files", async () => {
+  it("keeps includeLayout=true for pdf files to request block-level OCR", async () => {
     const post = jest.fn(async (_url: string, body: { includeLayout: boolean }) => {
-      expect(body.includeLayout).toBe(false);
+      expect(body.includeLayout).toBe(true);
       return {
         data: {
           raw_text: "pdf text",
@@ -384,7 +384,7 @@ describe("DeepSeekOcrProvider", () => {
     process.env.DEEPSEEK_OCR_MAX_TOKENS = "NaN";
     const post = jest.fn(async (_url: string, body: { maxTokens: number; prompt: string }) => {
       expect(body.maxTokens).toBe(512);
-      expect(body.prompt).toBe("<image>\n<|grounding|>Extract each readable text block verbatim in reading order.");
+      expect(body.prompt).toBe("<image>\n<|grounding|>Convert page to markdown.");
       return {
         data: {
           rawText: "ok"

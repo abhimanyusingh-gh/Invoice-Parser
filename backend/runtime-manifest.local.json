@@ -8,7 +8,7 @@
   "ocr": {
     "provider": "deepseek",
     "deepseek": {
-      "baseUrl": "http://deepseek-ocr:8000/v1",
+      "baseUrl": "http://host.docker.internal:8000/v1",
       "model": "deepseek-ai/DeepSeek-OCR",
       "timeoutMs": 3600000
     }
@@ -16,7 +16,7 @@
   "verifier": {
     "provider": "http",
     "http": {
-      "baseUrl": "http://slm-verifier:8100/v1",
+      "baseUrl": "http://host.docker.internal:8100/v1",
       "timeoutMs": 20000
     }
   },

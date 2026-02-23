@@ -24,8 +24,9 @@ The system must ingest invoices from configurable sources, extract data from mix
 
 3. OCR Extensibility + Agentic Selection
 - Use `OcrProvider` abstraction.
-- Current providers: Docker Model Runner OCR (`deepseek`) and Mock.
-- Runtime default model is `deepseek-ai/DeepSeek-OCR` through local/remote OpenAI-compatible OCR endpoint.
+- Current providers: `deepseek` and `mock`.
+- Local OCR uses MLX DeepSeek OCR (`invoice-ocr`) with `POST /v1/ocr/document`.
+- Production OCR uses the same interface via external OpenAI-compatible OCR endpoint.
 - No Tesseract fallback in runtime.
 - Agent evaluates multiple text candidates/strategies and chooses best parse.
 - Persist OCR engine and extraction source separately (`ocrProvider` and `metadata.extractionSource`).
@@ -73,6 +74,7 @@ The system must ingest invoices from configurable sources, extract data from mix
 - Backend supports `APP_MANIFEST_PATH` to load runtime composition from JSON:
   - database adapter config
   - OCR adapter config
+  - field verifier adapter config
   - ingestion source adapter list
   - export defaults
   - tenant/workload defaults

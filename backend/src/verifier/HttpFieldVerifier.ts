@@ -14,6 +14,7 @@ interface VerifyInvoiceResponse {
   parsed?: unknown;
   issues?: unknown;
   changedFields?: unknown;
+  reasonCodes?: unknown;
 }
 
 export class HttpFieldVerifier implements FieldVerifier {
@@ -60,7 +61,8 @@ export class HttpFieldVerifier implements FieldVerifier {
       return {
         parsed: normalizeParsed(response.data?.parsed) ?? input.parsed,
         issues: normalizeStringList(response.data?.issues),
-        changedFields: normalizeStringList(response.data?.changedFields)
+        changedFields: normalizeStringList(response.data?.changedFields),
+        reasonCodes: normalizeReasonCodes(response.data?.reasonCodes)
       };
     } catch (error) {
       logger.warn("verifier.http.failed", {
@@ -69,7 +71,8 @@ export class HttpFieldVerifier implements FieldVerifier {
       return {
         parsed: input.parsed,
         issues: ["Field verifier request failed; continuing with deterministic extraction."],
-        changedFields: []
+        changedFields: [],
+        reasonCodes: {}
       };
     }
   }
@@ -117,6 +120,20 @@ function normalizeStringList(value: unknown): string[] {
     return [];
   }
   return value.filter((entry): entry is string => typeof entry === "string" && entry.trim().length > 0);
+}
+
+function normalizeReasonCodes(value: unknown): Record<string, string> {
+  if (!isRecord(value)) {
+    return {};
+  }
+
+  const output: Record<string, string> = {};
+  for (const [key, entry] of Object.entries(value)) {
+    if (typeof entry === "string" && entry.trim().length > 0) {
+      output[key] = entry.trim();
+    }
+  }
+  return output;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

@@ -67,10 +67,11 @@ cp environments/prod.tfvars.example terraform.tfvars
 Minimal `extra_env` example for DeepSeek:
 ```hcl
 extra_env = {
-  DEEPSEEK_BASE_URL  = "http://your-deepseek-ocr-endpoint:8000/v1"
+  DEEPSEEK_BASE_URL  = "http://your-invoice-ocr-endpoint:8000/v1"
   DEEPSEEK_OCR_MODEL = "deepseek-ai/DeepSeek-OCR"
   DEEPSEEK_TIMEOUT_MS = "3600000"
   # DEEPSEEK_API_KEY = "set-only-if-endpoint-requires-auth"
+  FIELD_VERIFIER_BASE_URL = "http://your-invoice-slm-endpoint:8100/v1"
 }
 ```
 

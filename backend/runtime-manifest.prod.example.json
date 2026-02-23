@@ -8,7 +8,7 @@
   "ocr": {
     "provider": "deepseek",
     "deepseek": {
-      "baseUrl": "http://deepseek-ocr.modal.internal/v1",
+      "baseUrl": "http://invoice-ocr.modal.internal/v1",
       "model": "deepseek-ai/DeepSeek-OCR",
       "timeoutMs": 3600000
     }
@@ -16,7 +16,7 @@
   "verifier": {
     "provider": "http",
     "http": {
-      "baseUrl": "http://slm-verifier.modal.internal/v1",
+      "baseUrl": "http://invoice-slm.modal.internal/v1",
       "timeoutMs": 20000,
       "apiKey": "replace-with-token"
     }

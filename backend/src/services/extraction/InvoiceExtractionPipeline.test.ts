@@ -104,7 +104,21 @@ describe("InvoiceExtractionPipeline", () => {
           "Invoice Date: 2026-02-10",
           "Due Date: 2026-02-20"
         ].join("\n"),
-        confidence: 0.42
+        confidence: 0.42,
+        blocks: [
+          {
+            text: "Invoice Number: INV-2001",
+            page: 1,
+            bbox: [10, 10, 180, 32],
+            bboxNormalized: [0.01, 0.01, 0.18, 0.03]
+          },
+          {
+            text: "Vendor: Delta Services Ltd",
+            page: 1,
+            bbox: [10, 40, 220, 65],
+            bboxNormalized: [0.01, 0.04, 0.22, 0.07]
+          }
+        ]
       }),
       verifier,
       store
@@ -117,6 +131,15 @@ describe("InvoiceExtractionPipeline", () => {
     expect(result.strategy).toContain("verifier-relaxed");
     expect(result.parseResult.parsed.totalAmountMinor).toBe(8800);
     expect(verifier.verify).toHaveBeenCalledTimes(1);
+    expect(verifier.verify).toHaveBeenCalledWith(
+      expect.objectContaining({
+        ocrText: expect.stringContaining("Invoice Number: INV-2001"),
+        ocrBlocks: expect.any(Array),
+        hints: expect.objectContaining({
+          fieldRegions: expect.any(Object)
+        })
+      })
+    );
   });
 
   it("short-circuits through vendor template when deterministic validation passes", async () => {

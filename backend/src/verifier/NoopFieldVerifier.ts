@@ -7,7 +7,8 @@ export class NoopFieldVerifier implements FieldVerifier {
     return {
       parsed: input.parsed,
       issues: [],
-      changedFields: []
+      changedFields: [],
+      reasonCodes: {}
     };
   }
 }

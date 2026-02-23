@@ -147,7 +147,7 @@ async function assertDeepSeekConfigIsValid(runtimeManifest: RuntimeManifest): Pr
       throw new Error(
         `Configured model '${configuredModel}' is not listed by '${baseUrl}/models'. Available models: ${modelIds.join(
           ", "
-        )}. Start local OCR with 'docker compose up -d deepseek-ocr' or configure an endpoint that serves this model.`
+        )}. Start local OCR with 'yarn ocr:dev' or configure an endpoint that serves this model.`
       );
     }
   } catch (error) {

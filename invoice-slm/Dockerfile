@@ -5,10 +5,11 @@ ENV PYTHONDONTWRITEBYTECODE=1
 
 WORKDIR /app
 
-COPY slm-verifier/requirements.txt /app/requirements.txt
+COPY invoice-slm/requirements.txt /app/requirements.txt
 RUN pip install --no-cache-dir --upgrade pip && pip install --no-cache-dir -r /app/requirements.txt
 
-COPY slm-verifier/server.py /app/server.py
+COPY invoice-slm/server.py /app/server.py
+COPY invoice-slm/app /app/app
 
 EXPOSE 8100
 

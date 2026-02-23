@@ -8,6 +8,7 @@ export interface ParseResult {
 
 const invoiceNumberPatterns = [
   /invoice\s*(?:number|no\.?|#)\s*[:\-]?\s*#?\s*([A-Z0-9][A-Z0-9_\-/]{2,})/i,
+  /invoice\s*(?:n[o°]\.?|nr)\s*[:\-]?\s*#?\s*([A-Z0-9][A-Z0-9_\-/]{2,})/i,
   /bill\s*(?:number|no\.?|#)\s*[:\-]?\s*#?\s*([A-Z0-9][A-Z0-9_\-/]{2,})/i,
   /inv(?:oice)?\s*(?:number|no\.?|#)\s*[:\-]?\s*#?\s*([A-Z0-9][A-Z0-9_\-/]{2,})/i,
   /(?:invoice|factuur|facture)\s*(?:number|nummer|no\.?|#|n[°o])\s*[:\-]?\s*#?\s*([A-Z0-9][A-Z0-9_\-/]{2,})/i,
@@ -54,10 +55,10 @@ const dueDatePatterns = [
 ];
 
 const strongTotalPattern =
-  /(grand\s*total|amount\s*payable|amount\s*due|balance\s*due|total\s*due|invoice\s*total|net\s*payable|total\s*payable)/i;
-const weakTotalPattern = /\b(total|payable|balance)\b/i;
+  /(grand\s*total|amount\s*payable|amount\s*due|balance\s*due|total\s*due|invoice\s*total|net\s*payable|total\s*payable|amt\s*due|betrag)/i;
+const weakTotalPattern = /\b(total|payable|balance|amount\s*due|amt\s*due)\b/i;
 const negativeTotalPattern =
-  /(sub\s*total|subtotal|tax(?:able)?|vat|gst|cgst|sgst|igst|discount|round(?:ing)?\s*off|shipping|freight|delivery|paid|payment\s*received|advance|credit\s*note)/i;
+  /(sub\s*total|subtotal|tax(?:able)?|vat|gst|cgst|sgst|igst|mwst|u\s*st|ust|discount|round(?:ing)?\s*off|shipping|freight|delivery|paid|payment\s*received|advance|credit\s*note)/i;
 const amountTokenPattern = /[-+]?(?:\d{1,3}(?:[,\s.]\d{3})+|\d+)(?:[.,]\d{1,2})?/g;
 
 export function parseInvoiceText(text: string): ParseResult {
