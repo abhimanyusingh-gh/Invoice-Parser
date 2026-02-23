@@ -119,6 +119,25 @@ describe("parseInvoiceText", () => {
     expect(result.parsed.vendorName).toBe("ZENITH INDUSTRIES LTD");
   });
 
+  it("extracts vendor from sold-by labels and skips guest-name lines", () => {
+    const text = [
+      "Guest Name: Sanjay",
+      "Sold By: WS Retail Services Pvt. Ltd.,",
+      "Invoice Number: INV-900",
+      "Grand Total: 100.00"
+    ].join("\n");
+
+    const result = parseInvoiceText(text);
+    expect(result.parsed.vendorName).toBe("WS Retail Services Pvt. Ltd");
+  });
+
+  it("extracts invoice number when label and value are on separate lines", () => {
+    const text = ["N° de facture", "INV/01/2015/074320", "Grand Total: EUR 100.00"].join("\n");
+    const result = parseInvoiceText(text);
+
+    expect(result.parsed.invoiceNumber).toBe("INV/01/2015/074320");
+  });
+
   it("falls back to raw date text when date token cannot be normalized", () => {
     const text = [
       "Invoice Number: INV-445",
