@@ -52,7 +52,7 @@ export class DeepSeekOcrProvider implements OcrProvider {
 
   constructor(options?: DeepSeekOcrProviderOptions) {
     this.apiKey = options?.apiKey ?? process.env.DEEPSEEK_API_KEY ?? "";
-    this.model = options?.model ?? process.env.DEEPSEEK_OCR_MODEL ?? "deepseek-ai/DeepSeek-OCR";
+    this.model = options?.model ?? process.env.DEEPSEEK_OCR_MODEL ?? "mlx-community/DeepSeek-OCR-4bit";
     this.timeoutMs = options?.timeoutMs ?? readTimeoutMsFromEnv();
     this.prompt = normalizePrompt(options?.prompt ?? process.env.DEEPSEEK_OCR_PROMPT ?? DEFAULT_PROMPT);
     this.maxTokens = normalizeMaxTokens(options?.maxTokens ?? readMaxTokensFromEnv());
