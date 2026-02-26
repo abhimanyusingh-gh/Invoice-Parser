@@ -2,16 +2,21 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   approveInvoices,
   exportToTally,
+  fetchInvoiceById,
   fetchIngestionStatus,
   fetchInvoices,
+  getInvoiceBlockCropUrl,
+  getInvoiceFieldOverlayUrl,
   runIngestion,
   updateInvoiceParsedFields
 } from "./api";
 import type { IngestionJobStatus, Invoice, InvoiceStatus } from "./types";
 import { ConfidenceBadge } from "./components/ConfidenceBadge";
 import { ExtractedFieldsTable } from "./components/ExtractedFieldsTable";
+import { InvoiceSourceViewer } from "./components/InvoiceSourceViewer";
 import { TallyMappingTable } from "./components/TallyMappingTable";
 import { formatOcrConfidenceLabel, getExtractedFieldRows } from "./extractedFields";
+import { getInvoiceSourceHighlights, type SourceHighlight } from "./sourceHighlights";
 import {
   isInvoiceApprovable,
   isInvoiceExportable,
@@ -52,6 +57,11 @@ const EMPTY_EDIT_FORM: EditInvoiceFormState = {
 
 export function App() {
   const [invoices, setInvoices] = useState<Invoice[]>([]);
+  const [activeInvoiceDetail, setActiveInvoiceDetail] = useState<Invoice | null>(null);
+  const [popupInvoiceDetail, setPopupInvoiceDetail] = useState<Invoice | null>(null);
+  const [activeInvoiceDetailLoading, setActiveInvoiceDetailLoading] = useState(false);
+  const [popupInvoiceDetailLoading, setPopupInvoiceDetailLoading] = useState(false);
+  const [popupSourcePreviewExpanded, setPopupSourcePreviewExpanded] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<InvoiceStatus | "ALL">("ALL");
@@ -71,20 +81,95 @@ export function App() {
     void loadInvoices();
   }, [statusFilter]);
 
-  const activeInvoice = useMemo(
+  useEffect(() => {
+    if (!activeId) {
+      setActiveInvoiceDetail(null);
+      return;
+    }
+
+    let cancelled = false;
+    setActiveInvoiceDetailLoading(true);
+
+    void fetchInvoiceById(activeId)
+      .then((invoice) => {
+        if (!cancelled) {
+          setActiveInvoiceDetail(invoice);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setActiveInvoiceDetail(null);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setActiveInvoiceDetailLoading(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeId]);
+
+  useEffect(() => {
+    setPopupSourcePreviewExpanded(false);
+    if (!popupInvoiceId) {
+      setPopupInvoiceDetail(null);
+      return;
+    }
+
+    let cancelled = false;
+    setPopupInvoiceDetailLoading(true);
+
+    void fetchInvoiceById(popupInvoiceId)
+      .then((invoice) => {
+        if (!cancelled) {
+          setPopupInvoiceDetail(invoice);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setPopupInvoiceDetail(null);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setPopupInvoiceDetailLoading(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [popupInvoiceId]);
+
+  const activeInvoiceSummary = useMemo(
     () => invoices.find((invoice) => invoice._id === activeId) ?? null,
     [activeId, invoices]
   );
+  const activeInvoice = useMemo(() => {
+    if (activeInvoiceDetail?._id === activeId) {
+      return activeInvoiceDetail;
+    }
+    return activeInvoiceSummary;
+  }, [activeId, activeInvoiceDetail, activeInvoiceSummary]);
 
   const failedCount = useMemo(
     () => invoices.filter((invoice) => ["FAILED_OCR", "FAILED_PARSE"].includes(invoice.status)).length,
     [invoices]
   );
 
-  const popupInvoice = useMemo(
+  const popupInvoiceSummary = useMemo(
     () => invoices.find((invoice) => invoice._id === popupInvoiceId) ?? null,
     [invoices, popupInvoiceId]
   );
+  const popupInvoice = useMemo(() => {
+    if (popupInvoiceDetail?._id === popupInvoiceId) {
+      return popupInvoiceDetail;
+    }
+    return popupInvoiceSummary;
+  }, [popupInvoiceDetail, popupInvoiceId, popupInvoiceSummary]);
 
   const activeExtractedRows = useMemo(
     () => (activeInvoice ? getExtractedFieldRows(activeInvoice) : []),
@@ -95,7 +180,12 @@ export function App() {
     () => (activeInvoice ? getInvoiceTallyMappings(activeInvoice) : []),
     [activeInvoice]
   );
-
+  const activeCropUrlByField = useMemo(() => {
+    if (!activeInvoice) {
+      return {};
+    }
+    return buildFieldCropUrlMap(activeInvoice._id, getInvoiceSourceHighlights(activeInvoice));
+  }, [activeInvoice]);
   const popupExtractedRows = useMemo(
     () => (popupInvoice ? getExtractedFieldRows(popupInvoice) : []),
     [popupInvoice]
@@ -105,6 +195,18 @@ export function App() {
     () => (popupInvoice ? getInvoiceTallyMappings(popupInvoice) : []),
     [popupInvoice]
   );
+  const popupCropUrlByField = useMemo(() => {
+    if (!popupInvoice) {
+      return {};
+    }
+    return buildFieldCropUrlMap(popupInvoice._id, getInvoiceSourceHighlights(popupInvoice));
+  }, [popupInvoice]);
+  const popupOverlayUrlByField = useMemo(() => {
+    if (!popupInvoice) {
+      return {};
+    }
+    return buildFieldOverlayUrlMap(popupInvoice._id, getInvoiceSourceHighlights(popupInvoice));
+  }, [popupInvoice]);
 
   const canEditActiveInvoice = Boolean(activeInvoice && activeInvoice.status !== "EXPORTED");
   const ingestionProgressPercent = useMemo(() => {
@@ -193,7 +295,7 @@ export function App() {
 
     setEditForm(buildEditForm(activeInvoice));
     setEditingParsedFields(false);
-  }, [activeInvoice?._id]);
+  }, [activeInvoice]);
 
   useEffect(() => {
     void refreshIngestionStatus();
@@ -230,12 +332,19 @@ export function App() {
     try {
       const data = await fetchInvoices(statusFilter === "ALL" ? undefined : statusFilter);
       setInvoices(data.items);
+      const ids = new Set(data.items.map((item) => item._id));
       setSelectedIds((currentSelectedIds) => mergeSelectedIds(currentSelectedIds, data.items));
-      if (!data.items.find((item) => item._id === activeId)) {
+      if (activeId && !ids.has(activeId)) {
         setActiveId(data.items[0]?._id ?? null);
       }
-      if (popupInvoiceId && !data.items.find((item) => item._id === popupInvoiceId)) {
+      if (popupInvoiceId && !ids.has(popupInvoiceId)) {
         setPopupInvoiceId(null);
+      }
+      if (activeInvoiceDetail && !ids.has(activeInvoiceDetail._id)) {
+        setActiveInvoiceDetail(null);
+      }
+      if (popupInvoiceDetail && !ids.has(popupInvoiceDetail._id)) {
+        setPopupInvoiceDetail(null);
       }
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "Failed to fetch invoices");
@@ -575,44 +684,45 @@ export function App() {
             ) : activeInvoice ? (
               <div className="detail-scroll">
                 <div className="detail-content">
+                  {activeInvoiceDetailLoading ? <p className="muted">Loading full invoice details...</p> : null}
                   <div className="detail-grid">
                     <p>
-                      <span>ID</span>
-                      <strong>{activeInvoice._id}</strong>
-                    </p>
-                    <p>
-                      <span>Attachment</span>
+                      <span>File</span>
                       <strong>{activeInvoice.attachmentName}</strong>
                     </p>
                     <p>
-                      <span>Source</span>
-                      <strong>{activeInvoice.sourceType}:{activeInvoice.sourceKey}</strong>
+                      <span>Vendor</span>
+                      <strong>{activeInvoice.parsed?.vendorName ?? "-"}</strong>
                     </p>
                     <p>
-                      <span>Tenant / Tier</span>
-                      <strong>{activeInvoice.tenantId}:{activeInvoice.workloadTier}</strong>
+                      <span>Invoice Number</span>
+                      <strong>{activeInvoice.parsed?.invoiceNumber ?? "-"}</strong>
                     </p>
                     <p>
-                      <span>OCR Engine</span>
-                      <strong>{activeInvoice.ocrProvider ?? "-"}</strong>
+                      <span>Invoice Date</span>
+                      <strong>{activeInvoice.parsed?.invoiceDate ?? "-"}</strong>
                     </p>
                     <p>
-                      <span>Extraction Source</span>
-                      <strong>{activeInvoice.metadata?.extractionSource ?? "-"}</strong>
+                      <span>Due Date</span>
+                      <strong>{activeInvoice.parsed?.dueDate ?? "-"}</strong>
+                    </p>
+                    <p>
+                      <span>Total Amount</span>
+                      <strong>
+                        {formatMinorAmountWithCurrency(activeInvoice.parsed?.totalAmountMinor, activeInvoice.parsed?.currency)}
+                      </strong>
+                    </p>
+                    <p>
+                      <span>Status</span>
+                      <strong>{activeInvoice.status}</strong>
+                    </p>
+                    <p>
+                      <span>Confidence</span>
+                      <strong><ConfidenceBadge score={activeInvoice.confidenceScore ?? 0} /></strong>
                     </p>
                     <p>
                       <span>OCR Confidence</span>
                       <strong>{formatOcrConfidenceLabel(activeInvoice.ocrConfidence)}</strong>
-                    </p>
-                    <p>
-                      <span>OCR Blocks</span>
-                      <strong>{activeInvoice.ocrBlocks?.length ?? 0}</strong>
-                    </p>
-                    <p>
-                      <span>Confidence</span>
-                      <strong>
-                        <ConfidenceBadge score={activeInvoice.confidenceScore ?? 0} />
-                      </strong>
                     </p>
                   </div>
 
@@ -707,10 +817,18 @@ export function App() {
                   {detailsExpanded ? (
                     <>
                       <div>
+                        <h3>System Details</h3>
+                        <p className="muted system-details-line">
+                          Source: {activeInvoice.sourceType}:{activeInvoice.sourceKey} | Tenant: {activeInvoice.tenantId} |
+                          Tier: {activeInvoice.workloadTier}
+                        </p>
+                      </div>
+
+                      <div>
                         <h3>Risk Signals</h3>
-                        {activeInvoice.riskMessages.length > 0 ? (
+                        {(activeInvoice.riskMessages ?? []).length > 0 ? (
                           <ul>
-                            {activeInvoice.riskMessages.map((entry) => (
+                            {(activeInvoice.riskMessages ?? []).map((entry) => (
                               <li key={entry}>{entry}</li>
                             ))}
                           </ul>
@@ -721,9 +839,9 @@ export function App() {
 
                       <div>
                         <h3>Parse Errors / Warnings</h3>
-                        {activeInvoice.processingIssues.length > 0 ? (
+                        {(activeInvoice.processingIssues ?? []).length > 0 ? (
                           <ul>
-                            {activeInvoice.processingIssues.map((entry) => (
+                            {(activeInvoice.processingIssues ?? []).map((entry) => (
                               <li key={entry}>{entry}</li>
                             ))}
                           </ul>
@@ -734,7 +852,7 @@ export function App() {
 
                       <div>
                         <h3>Extracted Invoice Fields</h3>
-                        <ExtractedFieldsTable rows={activeExtractedRows} />
+                        <ExtractedFieldsTable rows={activeExtractedRows} cropUrlByField={activeCropUrlByField} />
                       </div>
 
                       <div>
@@ -775,13 +893,27 @@ export function App() {
               </button>
             </div>
             <p className="muted popup-meta">
-              Status: <strong>{popupInvoice.status}</strong> | Source: {popupInvoice.sourceType}:{popupInvoice.sourceKey} |
-              Tenant: {popupInvoice.tenantId} | Tier: {popupInvoice.workloadTier}
+              Status: <strong>{popupInvoice.status}</strong> | Received: {new Date(popupInvoice.receivedAt).toLocaleString()}
             </p>
             <div className="popup-content">
+              {popupInvoiceDetailLoading ? <p className="muted">Loading full invoice details...</p> : null}
+              {Object.keys(popupOverlayUrlByField).length > 0 ? (
+                <div className="source-preview-section">
+                  <button
+                    type="button"
+                    className="source-preview-toggle"
+                    onClick={() => setPopupSourcePreviewExpanded((currentValue) => !currentValue)}
+                  >
+                    {popupSourcePreviewExpanded ? "Hide Value Source Highlights" : "Show Value Source Highlights"}
+                  </button>
+                  {popupSourcePreviewExpanded ? (
+                    <InvoiceSourceViewer invoice={popupInvoice} overlayUrlByField={popupOverlayUrlByField} />
+                  ) : null}
+                </div>
+              ) : null}
               <div>
                 <h3>Extracted Invoice Fields</h3>
-                <ExtractedFieldsTable rows={popupExtractedRows} />
+                <ExtractedFieldsTable rows={popupExtractedRows} cropUrlByField={popupCropUrlByField} />
               </div>
               <div>
                 <h3>Detected Fields to Tally Mapping</h3>
@@ -817,4 +949,32 @@ function normalizeTextInput(value: string): string | null {
 function normalizeAmountInput(value: string): string | null {
   const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed : null;
+}
+
+function buildFieldCropUrlMap(
+  invoiceId: string,
+  highlights: SourceHighlight[]
+): Partial<Record<SourceHighlight["fieldKey"], string>> {
+  const output: Partial<Record<SourceHighlight["fieldKey"], string>> = {};
+  for (const highlight of highlights) {
+    if (typeof highlight.blockIndex !== "number" || highlight.blockIndex < 0 || !highlight.cropPath) {
+      continue;
+    }
+    output[highlight.fieldKey] = getInvoiceBlockCropUrl(invoiceId, highlight.blockIndex);
+  }
+  return output;
+}
+
+function buildFieldOverlayUrlMap(
+  invoiceId: string,
+  highlights: SourceHighlight[]
+): Partial<Record<SourceHighlight["fieldKey"], string>> {
+  const output: Partial<Record<SourceHighlight["fieldKey"], string>> = {};
+  for (const highlight of highlights) {
+    if (!highlight.overlayPath) {
+      continue;
+    }
+    output[highlight.fieldKey] = getInvoiceFieldOverlayUrl(invoiceId, highlight.fieldKey);
+  }
+  return output;
 }

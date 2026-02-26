@@ -89,6 +89,7 @@ def ocr_document(request: OcrDocumentRequest) -> dict[str, Any]:
 
   raw_text = str(extraction.get("rawText", ""))
   blocks = extraction["blocks"] if isinstance(extraction.get("blocks"), list) else []
+  page_images = extraction["pageImages"] if isinstance(extraction.get("pageImages"), list) else []
   confidence = normalize_confidence(extraction.get("confidence"))
   if confidence is None:
     confidence = estimate_confidence(raw_text, blocks)
@@ -112,6 +113,7 @@ def ocr_document(request: OcrDocumentRequest) -> dict[str, Any]:
     "rawText": raw_text,
     "confidence": int(round(confidence * 100)),
     "blocks": blocks,
+    "pageImages": page_images,
     "engineMode": extraction.get("mode", "unknown"),
     "latencyMs": elapsed_ms
   }

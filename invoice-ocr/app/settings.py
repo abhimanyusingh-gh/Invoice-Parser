@@ -20,6 +20,19 @@ def read_int(name: str, default: int, minimum: int) -> int:
   return value if value >= minimum else default
 
 
+def read_float(name: str, default: float, minimum: float, maximum: float) -> float:
+  raw = os.getenv(name)
+  if raw is None:
+    return default
+  try:
+    value = float(raw.strip())
+  except ValueError:
+    return default
+  if value < minimum or value > maximum:
+    return default
+  return value
+
+
 def read_choice(name: str, default: str, allowed: set[str]) -> str:
   raw = os.getenv(name)
   if raw is None:
@@ -42,10 +55,11 @@ class Settings:
   max_new_tokens: int
   pdf_max_pages: int
   load_on_startup: bool
+  hybrid_apple_accept_score: float
 
 
 settings = Settings(
-  engine=read_choice("OCR_ENGINE", "local_mlx", {"local_mlx", "prod_http"}),
+  engine=read_choice("OCR_ENGINE", "local_hybrid", {"local_hybrid", "local_mlx", "local_apple_vision", "prod_http"}),
   model_id=os.getenv("OCR_MODEL_ID", "mlx-community/DeepSeek-OCR-4bit").strip(),
   model_path=os.getenv("OCR_MODEL_PATH", "").strip(),
   remote_base_url=os.getenv("OCR_REMOTE_BASE_URL", "").strip(),
@@ -56,5 +70,6 @@ settings = Settings(
   layout_prompt=os.getenv("OCR_LAYOUT_PROMPT", "<|grounding|>Convert page to markdown."),
   max_new_tokens=read_int("OCR_MAX_NEW_TOKENS", 512, 64),
   pdf_max_pages=read_int("OCR_PDF_MAX_PAGES", 6, 1),
-  load_on_startup=read_bool("OCR_LOAD_ON_STARTUP", True)
+  load_on_startup=read_bool("OCR_LOAD_ON_STARTUP", True),
+  hybrid_apple_accept_score=read_float("OCR_HYBRID_APPLE_ACCEPT_SCORE", 0.9, 0.0, 1.0)
 )

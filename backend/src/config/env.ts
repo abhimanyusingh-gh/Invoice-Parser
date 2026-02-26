@@ -49,6 +49,16 @@ const envSchema = z.object({
   FIELD_VERIFIER_TIMEOUT_MS: z.coerce.number().default(20000),
   FIELD_VERIFIER_API_KEY: z.string().optional(),
 
+  LOCAL_FILE_STORE_ROOT: z.string().default(".local-run/artifacts"),
+  S3_FILE_STORE_BUCKET: z.string().optional(),
+  S3_FILE_STORE_REGION: z.string().default("us-east-1"),
+  S3_FILE_STORE_PREFIX: z.string().default("invoice-processor"),
+  S3_FILE_STORE_ENDPOINT: z.string().optional(),
+  S3_FILE_STORE_FORCE_PATH_STYLE: z
+    .string()
+    .default("false")
+    .transform((value) => value === "true"),
+
   CONFIDENCE_EXPECTED_MAX_TOTAL: z.coerce.number().default(100000),
   CONFIDENCE_EXPECTED_MAX_DUE_DAYS: z.coerce.number().default(90),
   CONFIDENCE_AUTO_SELECT_MIN: z.coerce.number().default(91),

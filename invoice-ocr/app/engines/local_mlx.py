@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import tempfile
 import time
 from threading import Lock, Thread
@@ -96,7 +97,19 @@ class LocalMlxOCREngine(OCREngine):
 
     chunks: list[str] = []
     blocks: list[dict[str, Any]] = []
+    page_images: list[dict[str, Any]] = []
     for page_number, page_bytes, page_width, page_height in pages:
+      page_images.append(
+        {
+          "page": page_number,
+          "mimeType": "image/png",
+          "width": page_width,
+          "height": page_height,
+          "dpi": 300,
+          "dataUrl": f"data:image/png;base64,{base64.b64encode(page_bytes).decode('ascii')}"
+        }
+      )
+
       image = open_image(page_bytes)
       try:
         page_text = self._infer_image(image, prompt, max_tokens)
@@ -114,6 +127,7 @@ class LocalMlxOCREngine(OCREngine):
     return {
       "rawText": "\n\n".join(chunks).strip(),
       "blocks": blocks,
+      "pageImages": page_images,
       "mode": "mlx_vlm_pdf",
       "model": settings.model_id,
       "provider": "deepseek-mlx-local"
