@@ -13,7 +13,7 @@ from Quartz import (
 )
 import Vision
 
-from .base import OCREngine
+from ..boundary import OCRProvider
 from ..engine import estimate_confidence, normalize_model_output, render_pdf_pages, resolve_prompt
 from ..settings import settings
 
@@ -21,7 +21,7 @@ from ..settings import settings
 APPLE_VISION_MODEL_ID = "apple-vision-text-recognition"
 
 
-class LocalAppleVisionOCREngine(OCREngine):
+class LocalAppleVisionOCRProvider(OCRProvider):
   def startup(self) -> None:
     return None
 
@@ -33,7 +33,7 @@ class LocalAppleVisionOCREngine(OCREngine):
       "modelLoading": False,
       "mode": "apple_vision",
       "lastError": "",
-      "engine": "local_apple_vision"
+      "provider": "local_apple_vision"
     }
 
   def list_models(self) -> list[dict[str, Any]]:

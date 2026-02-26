@@ -3,18 +3,18 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from .base import OCREngine
-from .local_apple_vision import LocalAppleVisionOCREngine
-from .local_mlx import LocalMlxOCREngine
+from ..boundary import OCRProvider
+from .local_apple_vision import LocalAppleVisionOCRProvider
+from .local_mlx import LocalMlxOCRProvider
 from ..engine import estimate_confidence
 from ..logging import log_error, log_info
 from ..settings import settings
 
 
-class LocalHybridOCREngine(OCREngine):
+class LocalHybridOCRProvider(OCRProvider):
   def __init__(self) -> None:
-    self.deepseek = LocalMlxOCREngine()
-    self.apple = LocalAppleVisionOCREngine()
+    self.deepseek = LocalMlxOCRProvider()
+    self.apple = LocalAppleVisionOCRProvider()
 
   def startup(self) -> None:
     self.deepseek.startup()
@@ -36,7 +36,7 @@ class LocalHybridOCREngine(OCREngine):
       "modelLoading": bool(deepseek_health.get("modelLoading", False)),
       "mode": "local_hybrid",
       "lastError": deepseek_health.get("lastError", ""),
-      "engine": "local_hybrid",
+      "provider": "local_hybrid",
       "providers": {
         "deepseek": deepseek_health,
         "appleVision": apple_health

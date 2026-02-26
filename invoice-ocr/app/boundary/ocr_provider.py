@@ -2,7 +2,7 @@ from abc import ABC, abstractmethod
 from typing import Any
 
 
-class OCREngine(ABC):
+class OCRProvider(ABC):
   @abstractmethod
   def startup(self) -> None:
     raise NotImplementedError

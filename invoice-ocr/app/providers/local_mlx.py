@@ -11,13 +11,13 @@ from mlx_vlm import generate, load
 from mlx_vlm.prompt_utils import apply_chat_template
 from mlx_vlm.utils import load_config
 
-from .base import OCREngine
+from ..boundary import OCRProvider
 from ..engine import normalize_model_output, open_image, parse_grounding_blocks, render_pdf_pages, resolve_prompt
 from ..logging import log_error, log_info
 from ..settings import settings
 
 
-class LocalMlxOCREngine(OCREngine):
+class LocalMlxOCRProvider(OCRProvider):
   def __init__(self) -> None:
     self.lock = Lock()
     self.loaded = False
@@ -46,7 +46,7 @@ class LocalMlxOCREngine(OCREngine):
       "modelLoading": self.loading,
       "mode": "mlx_vlm",
       "lastError": self.last_error,
-      "engine": "local_mlx"
+      "provider": "local_mlx"
     }
 
   def list_models(self) -> list[dict[str, Any]]:

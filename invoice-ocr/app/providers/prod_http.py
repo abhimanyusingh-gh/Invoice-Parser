@@ -7,12 +7,12 @@ from typing import Any
 from urllib import error as url_error
 from urllib import request as url_request
 
-from .base import OCREngine
+from ..boundary import OCRProvider
 from ..engine import normalize_blocks, normalize_remote_confidence, normalize_text
 from ..settings import settings
 
 
-class ProdHttpOCREngine(OCREngine):
+class ProdHttpOCRProvider(OCRProvider):
   def __init__(self) -> None:
     self.last_error = ""
     self.base_url = settings.remote_base_url.rstrip("/")
@@ -29,7 +29,7 @@ class ProdHttpOCREngine(OCREngine):
       "modelLoading": False,
       "mode": "prod_http",
       "lastError": self.last_error,
-      "engine": "prod_http"
+      "provider": "prod_http"
     }
     try:
       remote = self._request_json("/health")

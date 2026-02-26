@@ -5,11 +5,11 @@ from typing import Any
 from urllib import error as url_error
 from urllib import request as url_request
 
-from .base import LLMEngine
+from ..boundary import LLMProvider
 from ..settings import settings
 
 
-class ProdHttpLLMEngine(LLMEngine):
+class ProdHttpLLMProvider(LLMProvider):
   def __init__(self) -> None:
     self.last_error = ""
     self.base_url = settings.remote_base_url.rstrip("/")
@@ -26,7 +26,7 @@ class ProdHttpLLMEngine(LLMEngine):
       "modelLoaded": True,
       "modelLoading": False,
       "lastError": self.last_error,
-      "engine": "prod_http"
+      "provider": "prod_http"
     }
     try:
       remote = self._request_json("/health")

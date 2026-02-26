@@ -9,7 +9,7 @@ from typing import Any
 
 from mlx_lm import generate, load
 
-from .base import LLMEngine
+from ..boundary import LLMProvider
 from ..logging import log_error, log_info
 from ..settings import settings
 
@@ -28,7 +28,7 @@ GENERATION_RESULT_PATTERN = re.compile(
 THINK_BLOCK_PATTERN = re.compile(r"<think>.*?</think>", re.IGNORECASE | re.DOTALL)
 
 
-class LocalMlxLLMEngine(LLMEngine):
+class LocalMlxLLMProvider(LLMProvider):
   def __init__(self) -> None:
     self.lock = Lock()
     self.loaded = False
@@ -55,7 +55,7 @@ class LocalMlxLLMEngine(LLMEngine):
       "modelLoaded": self.loaded,
       "modelLoading": self.loading,
       "lastError": self.last_error,
-      "engine": "local_mlx"
+      "provider": "local_mlx"
     }
 
   def select_fields(self, payload: dict[str, Any]) -> dict[str, Any]:
