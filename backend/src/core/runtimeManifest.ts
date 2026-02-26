@@ -277,7 +277,7 @@ function resolveConfiguredManifestPath(): string | null {
     return resolveManifestPath(env.APP_MANIFEST_PATH);
   }
 
-  if (env.ENV !== "local" || env.NODE_ENV === "test") {
+  if (!env.isLocalMlEnv || env.NODE_ENV === "test") {
     return null;
   }
 
@@ -330,7 +330,7 @@ function createDefaultManifest(): RuntimeManifest {
       }
     },
     fileStore: {
-      provider: env.ENV === "prod" ? "s3" : "local",
+      provider: env.isLocalMlEnv ? "local" : "s3",
       local: {
         rootPath: env.LOCAL_FILE_STORE_ROOT
       },
