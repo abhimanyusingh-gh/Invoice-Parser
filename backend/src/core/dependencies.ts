@@ -19,6 +19,7 @@ import { HttpFieldVerifier } from "../verifier/HttpFieldVerifier.js";
 import { LocalDiskFileStore } from "../storage/LocalDiskFileStore.js";
 import { S3FileStore } from "../storage/S3FileStore.js";
 import { EmailSimulationService } from "../services/emailSimulationService.js";
+import { GmailMailboxConnectionService } from "../services/gmailMailboxConnectionService.js";
 
 const OCR_BOOTSTRAP_TIMEOUT_MS = 5_000;
 const VERIFIER_BOOTSTRAP_TIMEOUT_MS = 5_000;
@@ -28,10 +29,12 @@ interface Dependencies {
   invoiceService: InvoiceService;
   exportService: ExportService | null;
   emailSimulationService: EmailSimulationService;
+  gmailConnectionService: GmailMailboxConnectionService;
 }
 
 export async function buildDependencies(): Promise<Dependencies> {
   const manifest = loadRuntimeManifest();
+  const gmailConnectionService = new GmailMailboxConnectionService();
   const ocrProvider = await resolveOcrProvider(manifest);
   const fieldVerifier = await resolveFieldVerifier(manifest);
   const fileStore = resolveFileStore(manifest);
@@ -43,7 +46,9 @@ export async function buildDependencies(): Promise<Dependencies> {
       ocrHighConfidenceThreshold: manifest.extraction.ocrHighConfidenceThreshold
     }
   );
-  const sources = buildIngestionSources(manifest.sources);
+  const sources = buildIngestionSources(manifest.sources, {
+    gmailMailboxBoundary: gmailConnectionService
+  });
   const ingestionService = new IngestionService(sources, ocrProvider, {
     pipeline: extractionPipeline,
     fileStore
@@ -58,7 +63,8 @@ export async function buildDependencies(): Promise<Dependencies> {
     ingestionService,
     invoiceService,
     exportService,
-    emailSimulationService
+    emailSimulationService,
+    gmailConnectionService
   };
 }
 

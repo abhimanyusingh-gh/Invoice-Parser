@@ -3,6 +3,7 @@ const simpleParserMock = jest.fn();
 const connectMock = jest.fn();
 const mailboxOpenMock = jest.fn();
 const logoutMock = jest.fn();
+const verifySmtpXoauth2Mock = jest.fn();
 let fetchMessages: Array<{
   uid: number;
   source: Buffer;
@@ -19,6 +20,10 @@ jest.mock("axios", () => ({
 
 jest.mock("mailparser", () => ({
   simpleParser: (...args: unknown[]) => simpleParserMock(...args)
+}));
+
+jest.mock("./email/smtpXoauth2Probe.js", () => ({
+  verifySmtpXoauth2: (...args: unknown[]) => verifySmtpXoauth2Mock(...args)
 }));
 
 jest.mock("imapflow", () => ({
@@ -45,11 +50,16 @@ function baseConfig(overrides?: Partial<EmailSourceConfig>): EmailSourceConfig {
     key: "gmail-imap",
     tenantId: "tenant-default",
     workloadTier: "standard",
+    oauthUserId: "local-user",
     transport: "imap",
     mailhogApiBaseUrl: "http://mailhog-oauth:8026",
     host: "imap.gmail.com",
     port: 993,
     secure: true,
+    smtpHost: "smtp.gmail.com",
+    smtpPort: 465,
+    smtpSecure: true,
+    smtpTimeoutMs: 15000,
     username: "invoice@example.com",
     auth: {
       type: "password",
@@ -68,6 +78,7 @@ describe("EmailIngestionSource", () => {
     connectMock.mockReset();
     mailboxOpenMock.mockReset();
     logoutMock.mockReset();
+    verifySmtpXoauth2Mock.mockReset();
     capturedOptions = undefined;
     fetchMessages = [];
 
@@ -87,6 +98,7 @@ describe("EmailIngestionSource", () => {
         }
       ]
     });
+    verifySmtpXoauth2Mock.mockResolvedValue(undefined);
   });
 
   it("uses password auth when authMode=password", async () => {

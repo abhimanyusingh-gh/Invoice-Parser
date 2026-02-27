@@ -7,11 +7,16 @@ function buildEmailSource(overrides?: Partial<Extract<IngestionSourceManifest, {
     key: "gmail-inbox",
     tenantId: "tenant-1",
     workloadTier: "standard",
+    oauthUserId: "local-user",
     transport: "imap",
     mailhogApiBaseUrl: "http://mailhog-oauth:8026",
     host: "imap.gmail.com",
     port: 993,
     secure: true,
+    smtpHost: "smtp.gmail.com",
+    smtpPort: 465,
+    smtpSecure: true,
+    smtpTimeoutMs: 15000,
     username: "invoice@example.com",
     authMode: "password",
     password: "app-password",
@@ -65,10 +70,30 @@ describe("buildIngestionSources", () => {
     expect(sources[0]?.type).toBe("email");
   });
 
-  it("throws when oauth2 auth is selected without token credentials", () => {
+  it("allows oauth2 source without static token credentials when oauthUserId is configured", () => {
+    const sources = buildIngestionSources([
+      buildEmailSource({
+        authMode: "oauth2",
+        password: "",
+        oauth2: {
+          clientId: "",
+          clientSecret: "",
+          refreshToken: "",
+          accessToken: "",
+          tokenEndpoint: ""
+        }
+      })
+    ]);
+
+    expect(sources).toHaveLength(1);
+    expect(sources[0]?.type).toBe("email");
+  });
+
+  it("throws when oauth2 source has no oauthUserId and no token credentials", () => {
     expect(() =>
       buildIngestionSources([
         buildEmailSource({
+          oauthUserId: "",
           authMode: "oauth2",
           password: "",
           oauth2: {

@@ -2,8 +2,16 @@ import { EmailIngestionFacade } from "./facades/EmailIngestionFacade.js";
 import type { IngestionSource } from "./interfaces/IngestionSource.js";
 import type { IngestionSourceManifest } from "./runtimeManifest.js";
 import { FolderIngestionSource } from "../sources/FolderIngestionSource.js";
+import type { GmailMailboxBoundary } from "./boundaries/GmailMailboxBoundary.js";
 
-export function buildIngestionSources(sourceManifests: IngestionSourceManifest[]): IngestionSource[] {
+interface SourceRegistryOptions {
+  gmailMailboxBoundary?: GmailMailboxBoundary;
+}
+
+export function buildIngestionSources(
+  sourceManifests: IngestionSourceManifest[],
+  options: SourceRegistryOptions = {}
+): IngestionSource[] {
   const sources: IngestionSource[] = [];
 
   for (const sourceManifest of sourceManifests) {
@@ -14,11 +22,16 @@ export function buildIngestionSources(sourceManifests: IngestionSourceManifest[]
           key: sourceManifest.key,
           tenantId: sourceManifest.tenantId,
           workloadTier: sourceManifest.workloadTier,
+          oauthUserId: sourceManifest.oauthUserId,
           transport: sourceManifest.transport,
           mailhogApiBaseUrl: sourceManifest.mailhogApiBaseUrl,
           host: sourceManifest.host,
           port: sourceManifest.port,
           secure: sourceManifest.secure,
+          smtpHost: sourceManifest.smtpHost,
+          smtpPort: sourceManifest.smtpPort,
+          smtpSecure: sourceManifest.smtpSecure,
+          smtpTimeoutMs: sourceManifest.smtpTimeoutMs,
           username: sourceManifest.username,
           auth:
             sourceManifest.authMode === "oauth2"
@@ -36,7 +49,8 @@ export function buildIngestionSources(sourceManifests: IngestionSourceManifest[]
                   password: sourceManifest.password
                 },
           mailbox: sourceManifest.mailbox,
-          fromFilter: sourceManifest.fromFilter
+          fromFilter: sourceManifest.fromFilter,
+          gmailMailboxBoundary: options.gmailMailboxBoundary
         })
       );
       continue;
@@ -90,7 +104,7 @@ function assertEmailSourceConfiguration(sourceManifest: Extract<IngestionSourceM
       sourceManifest.oauth2.refreshToken.trim().length > 0 &&
       sourceManifest.oauth2.tokenEndpoint.trim().length > 0;
 
-    if (!hasStaticAccessToken && !hasRefreshTokenBundle) {
+    if (!hasStaticAccessToken && !hasRefreshTokenBundle && sourceManifest.oauthUserId.trim().length === 0) {
       throw new Error(
         "Email source OAuth2 selected but credentials are incomplete. Provide access token or client_id/client_secret/refresh_token/token_endpoint."
       );

@@ -1,4 +1,5 @@
 import type { WorkloadTier } from "../../types/tenant.js";
+import type { GmailMailboxBoundary } from "../../core/boundaries/GmailMailboxBoundary.js";
 
 export interface PasswordEmailAuthConfig {
   type: "password";
@@ -21,13 +22,19 @@ export interface EmailSourceConfig {
   key: string;
   tenantId?: string;
   workloadTier?: WorkloadTier;
+  oauthUserId: string;
   transport: "imap" | "mailhog_oauth";
   mailhogApiBaseUrl: string;
   host: string;
   port: number;
   secure: boolean;
+  smtpHost: string;
+  smtpPort: number;
+  smtpSecure: boolean;
+  smtpTimeoutMs: number;
   username: string;
   mailbox: string;
   fromFilter?: string;
   auth: EmailAuthConfig;
+  gmailMailboxBoundary?: GmailMailboxBoundary;
 }

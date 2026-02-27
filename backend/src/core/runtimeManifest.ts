@@ -19,11 +19,16 @@ interface SourceBaseManifest {
 
 export interface EmailSourceManifest extends SourceBaseManifest {
   type: "email";
+  oauthUserId: string;
   transport: "imap" | "mailhog_oauth";
   mailhogApiBaseUrl: string;
   host: string;
   port: number;
   secure: boolean;
+  smtpHost: string;
+  smtpPort: number;
+  smtpSecure: boolean;
+  smtpTimeoutMs: number;
   username: string;
   authMode: "password" | "oauth2";
   password: string;
@@ -177,11 +182,16 @@ const runtimeManifestSchema = z.object({
           key: z.string().min(1).optional(),
           tenantId: z.string().min(1).optional(),
           workloadTier: z.enum(["standard", "heavy"]).optional(),
+          oauthUserId: z.string().min(1).optional(),
           transport: z.enum(["imap", "mailhog_oauth"]).optional(),
           mailhogApiBaseUrl: z.string().optional(),
           host: z.string().optional(),
           port: z.coerce.number().int().positive().optional(),
           secure: z.coerce.boolean().optional(),
+          smtpHost: z.string().optional(),
+          smtpPort: z.coerce.number().int().positive().optional(),
+          smtpSecure: z.coerce.boolean().optional(),
+          smtpTimeoutMs: z.coerce.number().int().positive().optional(),
           username: z.string().optional(),
           authMode: z.enum(["password", "oauth2"]).optional(),
           password: z.string().optional(),
@@ -388,11 +398,16 @@ function resolveEnvSource(
       key: env.EMAIL_SOURCE_KEY,
       tenantId: defaults.defaultTenantId,
       workloadTier: defaults.defaultWorkloadTier,
+      oauthUserId: env.DEFAULT_USER_ID,
       transport: env.EMAIL_TRANSPORT,
       mailhogApiBaseUrl: env.EMAIL_MAILHOG_API_BASE_URL,
       host: env.EMAIL_HOST ?? "",
       port: env.EMAIL_PORT,
       secure: env.EMAIL_SECURE,
+      smtpHost: env.EMAIL_SMTP_HOST,
+      smtpPort: env.EMAIL_SMTP_PORT,
+      smtpSecure: env.EMAIL_SMTP_SECURE,
+      smtpTimeoutMs: env.EMAIL_SMTP_TIMEOUT_MS,
       username: env.EMAIL_USERNAME ?? "",
       authMode: env.EMAIL_AUTH_MODE,
       password: env.EMAIL_PASSWORD ?? "",
@@ -435,11 +450,16 @@ function resolveManifestSource(
       key: source.key ?? env.EMAIL_SOURCE_KEY,
       tenantId: source.tenantId ?? defaults.defaultTenantId,
       workloadTier: source.workloadTier ?? defaults.defaultWorkloadTier,
+      oauthUserId: source.oauthUserId ?? env.DEFAULT_USER_ID,
       transport: source.transport ?? env.EMAIL_TRANSPORT,
       mailhogApiBaseUrl: source.mailhogApiBaseUrl ?? env.EMAIL_MAILHOG_API_BASE_URL,
       host: source.host ?? env.EMAIL_HOST ?? "",
       port: source.port ?? env.EMAIL_PORT,
       secure: source.secure ?? env.EMAIL_SECURE,
+      smtpHost: source.smtpHost ?? env.EMAIL_SMTP_HOST,
+      smtpPort: source.smtpPort ?? env.EMAIL_SMTP_PORT,
+      smtpSecure: source.smtpSecure ?? env.EMAIL_SMTP_SECURE,
+      smtpTimeoutMs: source.smtpTimeoutMs ?? env.EMAIL_SMTP_TIMEOUT_MS,
       username: source.username ?? env.EMAIL_USERNAME ?? "",
       authMode: source.authMode ?? env.EMAIL_AUTH_MODE,
       password: source.password ?? env.EMAIL_PASSWORD ?? "",

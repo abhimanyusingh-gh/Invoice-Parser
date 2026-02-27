@@ -6,6 +6,21 @@ import { logger } from "../../utils/logger.js";
 import { isSupportedInvoiceMimeType, normalizeInvoiceMimeType } from "../../utils/mime.js";
 import { refreshGoogleAccessToken } from "./gmailOAuthClient.js";
 import type { EmailSourceConfig, OAuth2EmailAuthConfig } from "./types.js";
+import { verifySmtpXoauth2 } from "./smtpXoauth2Probe.js";
+import { GmailMailboxNeedsReauthError } from "./errors.js";
+
+interface ResolvedImapAuth {
+  auth: {
+    user: string;
+    pass?: string;
+    accessToken?: string;
+  };
+  smtpProbe?: {
+    user: string;
+    accessToken: string;
+  };
+  linkedUserId?: string;
+}
 
 export class GmailImapIngestionProvider implements EmailIngestionBoundary {
   private accessTokenCache: { value: string; expiresAtMs: number } | null = null;
@@ -31,11 +46,23 @@ export class GmailImapIngestionProvider implements EmailIngestionBoundary {
   }
 
   private async fetchWithAuth(lastCheckpoint: string | null, forceTokenRefresh: boolean): Promise<IngestedFile[]> {
+    const resolvedAuth = await this.resolveImapAuth(forceTokenRefresh);
+    if (resolvedAuth.smtpProbe) {
+      await verifySmtpXoauth2({
+        host: this.config.smtpHost,
+        port: this.config.smtpPort,
+        secure: this.config.smtpSecure,
+        user: resolvedAuth.smtpProbe.user,
+        accessToken: resolvedAuth.smtpProbe.accessToken,
+        timeoutMs: this.config.smtpTimeoutMs
+      });
+    }
+
     const client = new ImapFlow({
       host: this.config.host,
       port: this.config.port,
       secure: this.config.secure,
-      auth: await this.resolveImapAuth(forceTokenRefresh),
+      auth: resolvedAuth.auth,
       tls: {
         minVersion: "TLSv1.2",
         rejectUnauthorized: true
@@ -104,21 +131,51 @@ export class GmailImapIngestionProvider implements EmailIngestionBoundary {
       await client.logout().catch(() => undefined);
     }
 
+    if (resolvedAuth.linkedUserId && this.config.gmailMailboxBoundary) {
+      await this.config.gmailMailboxBoundary.markSyncSuccess(resolvedAuth.linkedUserId);
+    }
+
     files.sort((a, b) => Number(a.checkpointValue) - Number(b.checkpointValue));
     return files;
   }
 
-  private async resolveImapAuth(forceTokenRefresh: boolean): Promise<{ user: string; pass?: string; accessToken?: string }> {
+  private async resolveImapAuth(forceTokenRefresh: boolean): Promise<ResolvedImapAuth> {
     if (this.config.auth.type === "password") {
       return {
-        user: this.config.username,
-        pass: this.config.auth.password
+        auth: {
+          user: this.config.username,
+          pass: this.config.auth.password
+        }
       };
     }
 
+    if (this.config.gmailMailboxBoundary) {
+      const linked = await this.config.gmailMailboxBoundary.resolveIngestionCredentials(this.config.oauthUserId);
+      if (linked) {
+        return {
+          auth: {
+            user: linked.emailAddress,
+            accessToken: linked.accessToken
+          },
+          smtpProbe: {
+            user: linked.emailAddress,
+            accessToken: linked.accessToken
+          },
+          linkedUserId: this.config.oauthUserId
+        };
+      }
+    }
+
+    const fallbackToken = await this.resolveAccessToken(this.config.auth, forceTokenRefresh);
     return {
-      user: this.config.username,
-      accessToken: await this.resolveAccessToken(this.config.auth, forceTokenRefresh)
+      auth: {
+        user: this.config.username,
+        accessToken: fallbackToken
+      },
+      smtpProbe: {
+        user: this.config.username,
+        accessToken: fallbackToken
+      }
     };
   }
 
@@ -159,6 +216,10 @@ export class GmailImapIngestionProvider implements EmailIngestionBoundary {
   }
 
   private shouldRetryWithFreshToken(error: unknown): boolean {
+    if (error instanceof GmailMailboxNeedsReauthError) {
+      return false;
+    }
+
     if (this.config.auth.type !== "oauth2") {
       return false;
     }
