@@ -44,6 +44,15 @@ const envSchema = z.object({
     .transform((value) => value === "true"),
   EMAIL_USERNAME: z.string().optional(),
   EMAIL_PASSWORD: z.string().optional(),
+  EMAIL_AUTH_MODE: z.enum(["password", "oauth2"]).default("password"),
+  EMAIL_OAUTH_CLIENT_ID: z.string().optional(),
+  EMAIL_OAUTH_CLIENT_SECRET: z.string().optional(),
+  EMAIL_OAUTH_REFRESH_TOKEN: z.string().optional(),
+  EMAIL_OAUTH_ACCESS_TOKEN: z.string().optional(),
+  EMAIL_OAUTH_TOKEN_ENDPOINT: z
+    .string()
+    .default("https://oauth2.googleapis.com/token")
+    .transform((value) => normalizeUrl(value)),
   EMAIL_MAILBOX: z.string().default("INBOX"),
   EMAIL_FROM_FILTER: z.string().optional(),
 

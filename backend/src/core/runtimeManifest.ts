@@ -23,7 +23,15 @@ export interface EmailSourceManifest extends SourceBaseManifest {
   port: number;
   secure: boolean;
   username: string;
+  authMode: "password" | "oauth2";
   password: string;
+  oauth2: {
+    clientId: string;
+    clientSecret: string;
+    refreshToken: string;
+    accessToken: string;
+    tokenEndpoint: string;
+  };
   mailbox: string;
   fromFilter: string;
 }
@@ -171,7 +179,17 @@ const runtimeManifestSchema = z.object({
           port: z.coerce.number().int().positive().optional(),
           secure: z.coerce.boolean().optional(),
           username: z.string().optional(),
+          authMode: z.enum(["password", "oauth2"]).optional(),
           password: z.string().optional(),
+          oauth2: z
+            .object({
+              clientId: z.string().optional(),
+              clientSecret: z.string().optional(),
+              refreshToken: z.string().optional(),
+              accessToken: z.string().optional(),
+              tokenEndpoint: z.string().optional()
+            })
+            .optional(),
           mailbox: z.string().optional(),
           fromFilter: z.string().optional()
         }),
@@ -370,7 +388,15 @@ function resolveEnvSource(
       port: env.EMAIL_PORT,
       secure: env.EMAIL_SECURE,
       username: env.EMAIL_USERNAME ?? "",
+      authMode: env.EMAIL_AUTH_MODE,
       password: env.EMAIL_PASSWORD ?? "",
+      oauth2: {
+        clientId: env.EMAIL_OAUTH_CLIENT_ID ?? "",
+        clientSecret: env.EMAIL_OAUTH_CLIENT_SECRET ?? "",
+        refreshToken: env.EMAIL_OAUTH_REFRESH_TOKEN ?? "",
+        accessToken: env.EMAIL_OAUTH_ACCESS_TOKEN ?? "",
+        tokenEndpoint: env.EMAIL_OAUTH_TOKEN_ENDPOINT
+      },
       mailbox: env.EMAIL_MAILBOX,
       fromFilter: env.EMAIL_FROM_FILTER ?? ""
     };
@@ -407,7 +433,15 @@ function resolveManifestSource(
       port: source.port ?? env.EMAIL_PORT,
       secure: source.secure ?? env.EMAIL_SECURE,
       username: source.username ?? env.EMAIL_USERNAME ?? "",
+      authMode: source.authMode ?? env.EMAIL_AUTH_MODE,
       password: source.password ?? env.EMAIL_PASSWORD ?? "",
+      oauth2: {
+        clientId: source.oauth2?.clientId ?? env.EMAIL_OAUTH_CLIENT_ID ?? "",
+        clientSecret: source.oauth2?.clientSecret ?? env.EMAIL_OAUTH_CLIENT_SECRET ?? "",
+        refreshToken: source.oauth2?.refreshToken ?? env.EMAIL_OAUTH_REFRESH_TOKEN ?? "",
+        accessToken: source.oauth2?.accessToken ?? env.EMAIL_OAUTH_ACCESS_TOKEN ?? "",
+        tokenEndpoint: source.oauth2?.tokenEndpoint ?? env.EMAIL_OAUTH_TOKEN_ENDPOINT
+      },
       mailbox: source.mailbox ?? env.EMAIL_MAILBOX,
       fromFilter: source.fromFilter ?? env.EMAIL_FROM_FILTER ?? ""
     };
