@@ -16,7 +16,9 @@ Implemented:
   - `ENV=local` -> local disk
   - `ENV=stg|prod` -> S3
 - Tenant/workload partition keys (`tenantId`, `workloadTier`) across sources, checkpoints, and invoices.
-- OAuth2 login + STS boundary abstraction (`LocalStsProvider`, `ProdStsProvider`) with tenant bootstrap on first login.
+- Email/password login that exchanges credentials for an internal session token (claims carry role/access).
+- Internal session tokens are standards-compliant JWTs (`HS256`) with role + platform-admin claims.
+- OAuth2 + STS boundary abstraction (`LocalStsProvider`, `ProdStsProvider`) retained for provider integrations and callback flows.
 - Tenant onboarding gate, RBAC (`TENANT_ADMIN`, `MEMBER`), invite flow, and tenant-owned Gmail integration state.
 - Session flags for UI operational state (`requires_tenant_setup`, `requires_reauth`, `requires_admin_action`).
 - Review dashboard with failed/parsed visibility, confidence badges, batch approval/export, and full invoice list paging.
@@ -79,12 +81,19 @@ This brings up:
 - Frontend dashboard: `http://localhost:5173`
 - MongoDB: `localhost:27017`
 - Mongo Express: `http://localhost:8081`
-- MailHog SMTP/UI: `localhost:1025` / `http://localhost:8025`
+- Mailpit (MailHog-compatible) SMTP/UI: `localhost:1025` / `http://localhost:8025`
 - MailHog OAuth wrapper: `http://localhost:8026`
 - OCR service: `http://localhost:8000`
 - SLM service: `http://localhost:8100`
 
 `yarn docker:up` starts local OCR/SLM services on host macOS (for `ENV=local`) and then starts compose services.
+
+Local demo mode (`yarn docker:up` with default settings) also:
+- seeds two demo tenants and users in MongoDB
+- enables a seeded platform-admin account
+- splits `sample-invoices/inbox` equally into tenant-specific inboxes under `.local-run/demo-inbox`
+- mounts `backend/runtime-manifest.local.demo.json` so each tenant ingests only its own folder source
+- disables auto user provisioning so demo roles remain credential-driven
 
 5. Create env files (optional overrides):
 ```bash
@@ -107,12 +116,23 @@ Notes:
   - SendGrid mode uses `INVITE_SENDGRID_API_KEY`, `INVITE_SENDGRID_ENDPOINT`, `INVITE_SENDGRID_TIMEOUT_MS`
   - Local simulation endpoint: `http://mailhog-oauth:8026/sendgrid/v3/mail/send` (relays to MailHog SMTP)
 - Platform admin access is OAuth-driven via `PLATFORM_ADMIN_EMAILS` (comma-separated allowlist).
+- `AUTH_AUTO_PROVISION_USERS` defaults to `false`; tenant admins are expected to be onboarded by a platform admin.
+- Local seeded users are configured only in `backend/config/local-demo-users.json`.
+- You can override the seed config path with `LOCAL_DEMO_CONFIG_PATH`.
+- Demo credentials (all use password `DemoPass!1`):
+  - `tenant-admin-1@local.test` (Tenant Alpha admin)
+  - `tenant-user-1@local.test` (Tenant Alpha member)
+  - `tenant-admin-2@local.test` (Tenant Beta admin)
+  - `tenant-user-2@local.test` (Tenant Beta member)
+  - `platform-admin@local.test` (platform usage-only view)
+- The login screen does not expose demo accounts; users sign in with email/password.
 - Platform admin usage API (`GET /api/platform/tenants/usage`) returns tenant-level aggregates only:
   - tenant identity + onboarding state
   - user count
   - document status counts
   - Gmail connection state + last ingestion timestamp
   - no invoice-level payload or OCR content
+- Platform admins can onboard tenant admins from API (`POST /api/platform/tenants/onboard-admin`) and from the frontend "Onboard Tenant Admin" form.
 - Artifact storage is also env-driven:
   - `ENV=local` uses `LOCAL_FILE_STORE_ROOT` (default `.local-run/artifacts`, gitignored)
   - `ENV=stg|prod` uses `S3_FILE_STORE_BUCKET` + `S3_FILE_STORE_REGION` + `S3_FILE_STORE_PREFIX`
@@ -209,7 +229,7 @@ MailHog XOAUTH2 prod-simulation transport:
 - `EMAIL_AUTH_MODE=oauth2`
 - `EMAIL_OAUTH_TOKEN_ENDPOINT=http://mailhog-oauth:8026/oauth/token`
 - requests to wrapper endpoints are authenticated with `Authorization: XOAUTH2 <base64(user=...^Aauth=Bearer ...^A^A)>`
-- dashboard action: `Run Email XOAUTH2 Simulation` seeds MailHog emails (max two invoice attachments per email) and then triggers ingestion
+- dashboard action: `Ingest Demo Emails` seeds MailHog emails (max two invoice attachments per email) and then triggers ingestion
 
 Run ingestion:
 ```bash
