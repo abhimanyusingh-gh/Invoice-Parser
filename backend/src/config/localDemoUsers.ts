@@ -25,13 +25,13 @@ const demoConfigSchema = z.object({
 
 type DemoConfig = z.infer<typeof demoConfigSchema>;
 
-export interface LocalDemoTenant {
+interface LocalDemoTenant {
   id: string;
   name: string;
   onboardingStatus: "pending" | "completed";
 }
 
-export interface LocalDemoUser {
+interface LocalDemoUser {
   email: string;
   password: string;
   displayName: string;
@@ -39,7 +39,7 @@ export interface LocalDemoUser {
   role: TenantRole;
 }
 
-export interface LocalDemoUsersConfig {
+interface LocalDemoUsersConfig {
   tenants: LocalDemoTenant[];
   users: LocalDemoUser[];
 }

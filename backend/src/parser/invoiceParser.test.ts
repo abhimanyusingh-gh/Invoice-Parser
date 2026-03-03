@@ -170,6 +170,19 @@ describe("parseInvoiceText", () => {
     expect(result.parsed.dueDate).toBe("2026-02-20");
   });
 
+  it("falls back gracefully when language hint is blank", () => {
+    const text = [
+      "Invoice Number: INV-901",
+      "Vendor: ACME LTD",
+      "Grand Total: 10.00"
+    ].join("\n");
+    const result = parseInvoiceText(text, { languageHint: "   " });
+
+    expect(result.parsed.invoiceNumber).toBe("INV-901");
+    expect(result.parsed.vendorName).toBe("ACME LTD");
+    expect(result.parsed.totalAmountMinor).toBe(1000);
+  });
+
   it("extracts invoice number from fallback inline hint patterns", () => {
     const text = [
       "Document Header",

@@ -6,15 +6,15 @@ export interface ParseResult {
   warnings: string[];
 }
 
-export interface ParseInvoiceOptions {
+interface ParseInvoiceOptions {
   languageHint?: string;
 }
 
 const LANGUAGE_PATTERN_OVERRIDES: Record<string, {
-  invoiceNumber?: RegExp[];
-  invoiceDate?: RegExp[];
-  dueDate?: RegExp[];
-  vendorPrefixes?: string[];
+  invoiceNumber: RegExp[];
+  invoiceDate: RegExp[];
+  dueDate: RegExp[];
+  vendorPrefixes: string[];
 }> = {
   fr: {
     invoiceNumber: [
@@ -340,10 +340,6 @@ function resolvePatternSet(
       : type === "invoiceDate"
         ? languageConfig.invoiceDate
         : languageConfig.dueDate;
-  if (!override || override.length === 0) {
-    return fallback;
-  }
-
   return [...override, ...fallback];
 }
 

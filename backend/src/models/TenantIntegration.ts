@@ -1,7 +1,7 @@
 import { Schema, model, type InferSchemaType } from "mongoose";
 
-export const TenantIntegrationProviders = ["gmail"] as const;
-export const TenantIntegrationStatuses = ["connected", "requires_reauth", "error"] as const;
+const TenantIntegrationProviders = ["gmail"] as const;
+const TenantIntegrationStatuses = ["connected", "requires_reauth", "error"] as const;
 
 const tenantIntegrationSchema = new Schema(
   {

@@ -34,7 +34,7 @@ backendClient.interceptors.response.use(
   (error) => Promise.reject(normalizeApiError(error))
 );
 
-export interface SessionContextResponse {
+interface SessionContextResponse {
   user: {
     id: string;
     email: string;
@@ -54,7 +54,7 @@ export interface SessionContextResponse {
   };
 }
 
-export interface TenantUserSummary {
+interface TenantUserSummary {
   userId: string;
   email: string;
   role: "TENANT_ADMIN" | "MEMBER";
@@ -76,7 +76,7 @@ export interface PlatformTenantUsageSummary {
   createdAt: string;
 }
 
-export interface PlatformTenantOnboardResult {
+interface PlatformTenantOnboardResult {
   tenantId: string;
   tenantName: string;
   adminUserId: string;
@@ -100,16 +100,6 @@ export function clearStoredSessionToken(): void {
   window.localStorage.removeItem(SESSION_TOKEN_KEY);
 }
 
-export function getAuthLoginUrl(nextPath = "/", loginHint = ""): string {
-  const url = new URL("/auth/login", backendBaseUrl);
-  url.searchParams.set("next", nextPath);
-  const normalizedLoginHint = loginHint.trim().toLowerCase();
-  if (normalizedLoginHint.length > 0) {
-    url.searchParams.set("login_hint", normalizedLoginHint);
-  }
-  return url.toString();
-}
-
 export async function loginWithCredentials(email: string, password: string): Promise<string> {
   const response = await backendClient.post<{ token?: string }>("/auth/token", {
     email,
@@ -129,10 +119,6 @@ export async function fetchSessionContext(): Promise<SessionContextResponse> {
 
 export async function completeTenantOnboarding(payload: { tenantName: string; adminEmail: string }): Promise<void> {
   await apiClient.post("/tenant/onboarding/complete", payload);
-}
-
-export async function acceptTenantInvite(token: string): Promise<void> {
-  await apiClient.post("/tenant/invites/accept", { token });
 }
 
 export async function fetchTenantUsers(): Promise<TenantUserSummary[]> {

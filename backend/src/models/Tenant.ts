@@ -1,6 +1,6 @@
 import { Schema, model, type InferSchemaType } from "mongoose";
 
-export const TenantOnboardingStatuses = ["pending", "completed"] as const;
+const TenantOnboardingStatuses = ["pending", "completed"] as const;
 
 const tenantSchema = new Schema(
   {

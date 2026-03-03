@@ -5,7 +5,7 @@ import { UserModel } from "../models/User.js";
 import { TenantUserRoleModel } from "../models/TenantUserRole.js";
 import { HttpError } from "../errors/HttpError.js";
 
-export interface TenantUsageOverview {
+interface TenantUsageOverview {
   tenantId: string;
   tenantName: string;
   onboardingStatus: "pending" | "completed";
