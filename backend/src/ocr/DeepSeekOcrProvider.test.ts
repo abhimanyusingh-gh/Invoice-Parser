@@ -27,8 +27,8 @@ describe("DeepSeekOcrProvider", () => {
   it("calls /ocr/document without authorization header when api key is empty", async () => {
     const post = jest.fn(async (_url: string, body: { includeLayout: boolean; prompt: string }, config: { headers: Record<string, string> }) => {
       expect(body.includeLayout).toBe(true);
-      expect(body.prompt).toContain("<|grounding|>Convert page to markdown.");
-      expect(body.prompt).toContain("Key-Value Pairs");
+      expect(body.prompt).toContain("Transcribe all visible text exactly as written.");
+      expect(body.prompt).not.toContain("Key-Value Pairs");
       expect(config.headers.Authorization).toBeUndefined();
       return {
         data: {
@@ -46,8 +46,9 @@ describe("DeepSeekOcrProvider", () => {
 
   it("strips image placeholders from configured OCR prompt", async () => {
     const post = jest.fn(async (_url: string, body: { prompt: string }) => {
-      expect(body.prompt).toContain("Convert page to markdown.");
-      expect(body.prompt).toContain("Key-Value Pairs");
+      expect(body.prompt).toContain("Transcribe all visible text exactly as written.");
+      expect(body.prompt).not.toContain("<image>");
+      expect(body.prompt).not.toContain("<|image_1|>");
       return {
         data: {
           rawText: "invoice text"
@@ -56,7 +57,7 @@ describe("DeepSeekOcrProvider", () => {
     });
 
     const provider = new DeepSeekOcrProvider({
-      prompt: "<image>\nConvert page to markdown. <|image_1|>",
+      prompt: "<image>\nTranscribe all visible text exactly as written. Preserve numbers and layout. <|image_1|>",
       httpClient: { post }
     });
 
@@ -65,9 +66,8 @@ describe("DeepSeekOcrProvider", () => {
 
   it("appends language hint to OCR prompt when provided", async () => {
     const post = jest.fn(async (_url: string, body: { prompt: string }) => {
-      expect(body.prompt).toContain("Convert page to markdown.");
-      expect(body.prompt).toContain("Key-Value Pairs");
-      expect(body.prompt).toContain("Document language hint: fr.");
+      expect(body.prompt).toContain("Transcribe all visible text exactly as written.");
+      expect(body.prompt).toContain("Document language hint: fr. Preserve native language.");
       return {
         data: {
           rawText: "invoice text"
@@ -76,16 +76,16 @@ describe("DeepSeekOcrProvider", () => {
     });
 
     const provider = new DeepSeekOcrProvider({
-      prompt: "Convert page to markdown.",
+      prompt: "Transcribe all visible text exactly as written. Preserve numbers and layout.",
       httpClient: { post }
     });
 
     await provider.extractText(Buffer.from("png"), "image/png", { languageHint: "fr" });
   });
 
-  it("supports disabling key-value prompt enforcement for baseline comparisons", async () => {
+  it("keeps transcription-only prompt even when legacy key-value option is provided", async () => {
     const post = jest.fn(async (_url: string, body: { prompt: string }) => {
-      expect(body.prompt).toBe("Convert page to markdown.");
+      expect(body.prompt).toBe("Transcribe all visible text exactly as written. Preserve numbers and layout.");
       return {
         data: {
           rawText: "invoice text"
@@ -94,7 +94,7 @@ describe("DeepSeekOcrProvider", () => {
     });
 
     const provider = new DeepSeekOcrProvider({
-      prompt: "Convert page to markdown.",
+      prompt: "Transcribe all visible text exactly as written. Preserve numbers and layout.",
       enforceKeyValuePairs: false,
       httpClient: { post }
     });
@@ -549,9 +549,8 @@ describe("DeepSeekOcrProvider", () => {
   it("falls back to default max tokens when env override is invalid", async () => {
     process.env.DEEPSEEK_OCR_MAX_TOKENS = "NaN";
     const post = jest.fn(async (_url: string, body: { maxTokens: number; prompt: string }) => {
-      expect(body.maxTokens).toBe(512);
-      expect(body.prompt).toContain("<|grounding|>Convert page to markdown.");
-      expect(body.prompt).toContain("Key-Value Pairs");
+      expect(body.maxTokens).toBe(2048);
+      expect(body.prompt).toContain("Transcribe all visible text exactly as written.");
       return {
         data: {
           rawText: "ok"
@@ -565,7 +564,7 @@ describe("DeepSeekOcrProvider", () => {
 
   it("falls back to default max tokens when override is invalid", async () => {
     const post = jest.fn(async (_url: string, body: { maxTokens: number }) => {
-      expect(body.maxTokens).toBe(512);
+      expect(body.maxTokens).toBe(2048);
       return {
         data: {
           rawText: "ok"

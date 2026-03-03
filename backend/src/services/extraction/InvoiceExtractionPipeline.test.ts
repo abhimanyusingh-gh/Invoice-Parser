@@ -1,5 +1,5 @@
 import type { FieldVerifier, FieldVerifierResult } from "../../core/interfaces/FieldVerifier.ts";
-import type { OcrBlock, OcrExtractionOptions, OcrProvider } from "../../core/interfaces/OcrProvider.ts";
+import type { OcrBlock, OcrExtractionOptions, OcrPageImage, OcrProvider } from "../../core/interfaces/OcrProvider.ts";
 import { InvoiceExtractionPipeline, ExtractionPipelineError } from "./InvoiceExtractionPipeline.ts";
 import { InMemoryVendorTemplateStore } from "./vendorTemplateStore.ts";
 
@@ -26,6 +26,7 @@ class StubOcrProvider implements OcrProvider {
       text: string;
       confidence?: number;
       blocks?: OcrBlock[];
+      pageImages?: OcrPageImage[];
       throwError?: boolean;
     }
   ) {}
@@ -34,7 +35,7 @@ class StubOcrProvider implements OcrProvider {
     _buffer: Buffer,
     mimeType: string,
     options?: OcrExtractionOptions
-  ): Promise<{ text: string; confidence?: number; provider: string; blocks?: OcrBlock[] }> {
+  ): Promise<{ text: string; confidence?: number; provider: string; blocks?: OcrBlock[]; pageImages?: OcrPageImage[] }> {
     this.lastRequest = {
       mimeType,
       languageHint: options?.languageHint
@@ -47,7 +48,8 @@ class StubOcrProvider implements OcrProvider {
       text: this.payload.text,
       confidence: this.payload.confidence,
       provider: this.name,
-      blocks: this.payload.blocks
+      blocks: this.payload.blocks,
+      pageImages: this.payload.pageImages
     };
   }
 }
@@ -133,6 +135,15 @@ describe("InvoiceExtractionPipeline", () => {
             bbox: [10, 40, 220, 65],
             bboxNormalized: [0.01, 0.04, 0.22, 0.07]
           }
+        ],
+        pageImages: [
+          {
+            page: 1,
+            dataUrl: "data:image/png;base64,ZmFrZS1wYWdlLWltYWdl",
+            mimeType: "image/png",
+            width: 640,
+            height: 480
+          }
         ]
       }),
       verifier,
@@ -151,11 +162,112 @@ describe("InvoiceExtractionPipeline", () => {
         ocrText: expect.stringContaining("Invoice Number: INV-2001"),
         ocrBlocks: expect.any(Array),
         hints: expect.objectContaining({
+          languageHint: "en",
           documentLanguage: "en",
           fieldRegions: expect.any(Object)
         })
       })
     );
+    const verifierCalls = (verifier.verify as unknown as jest.Mock).mock.calls as Array<
+      Array<{
+        hints?: {
+          documentContext?: unknown;
+        };
+      }>
+    >;
+    expect(verifierCalls[0]?.[0]?.hints?.documentContext).toBeUndefined();
+  });
+
+  it("does not include full document context for strict verifier mode", async () => {
+    const store = new InMemoryVendorTemplateStore();
+    const verifier = new StubFieldVerifier({
+      parsed: {
+        totalAmountMinor: 1200
+      },
+      issues: [],
+      changedFields: ["totalAmountMinor"]
+    });
+    const pipeline = new InvoiceExtractionPipeline(
+      new StubOcrProvider({
+        text: SAMPLE_TEXT,
+        confidence: 0.97
+      }),
+      verifier,
+      store
+    );
+
+    await pipeline.extract({
+      ...buildInput(),
+      expectedMaxTotal: 5
+    });
+
+    expect(verifier.verify).toHaveBeenCalledTimes(1);
+    expect(verifier.verify).toHaveBeenCalledWith(
+      expect.objectContaining({
+        mode: "strict",
+        hints: expect.objectContaining({
+          documentLanguage: "en"
+        })
+      })
+    );
+
+    const verifierCalls = (verifier.verify as unknown as jest.Mock).mock.calls as Array<
+      Array<{
+        hints?: {
+          documentContext?: unknown;
+        };
+      }>
+    >;
+    expect(verifierCalls[0]?.[0]?.hints?.documentContext).toBeUndefined();
+  });
+
+  it("passes pre- and post-OCR language hints to verifier payload", async () => {
+    const store = new InMemoryVendorTemplateStore();
+    const verifier = new StubFieldVerifier({
+      parsed: {
+        totalAmountMinor: 1200
+      },
+      issues: [],
+      changedFields: ["totalAmountMinor"]
+    });
+    const pipeline = new InvoiceExtractionPipeline(
+      new StubOcrProvider({
+        text: SAMPLE_TEXT,
+        confidence: 0.97
+      }),
+      verifier,
+      store
+    );
+
+    const result = await pipeline.extract({
+      ...buildInput(),
+      attachmentName: "Facture-client-2026.pdf",
+      mimeType: "application/pdf",
+      expectedMaxTotal: 5
+    });
+
+    expect(result.metadata.preOcrLanguage).toBe("fr");
+    expect(result.metadata.postOcrLanguage).toBe("en");
+    expect(verifier.verify).toHaveBeenCalledTimes(1);
+    expect(verifier.verify).toHaveBeenCalledWith(
+      expect.objectContaining({
+        hints: expect.objectContaining({
+          languageHint: "en",
+          documentLanguage: "en",
+          preOcrLanguage: "fr",
+          postOcrLanguage: "en"
+        })
+      })
+    );
+
+    const verifierCalls = (verifier.verify as unknown as jest.Mock).mock.calls as Array<
+      Array<{
+        hints?: {
+          documentContext?: unknown;
+        };
+      }>
+    >;
+    expect(verifierCalls[0]?.[0]?.hints?.documentContext).toBeUndefined();
   });
 
   it("short-circuits through vendor template when deterministic validation passes", async () => {
@@ -258,6 +370,7 @@ describe("InvoiceExtractionPipeline", () => {
     const result = await pipeline.extract(buildInput());
 
     expect(result.attempts.some((attempt) => attempt.source === "ocr-key-value-grounding")).toBe(true);
+    expect(result.attempts.some((attempt) => attempt.source === "ocr-key-value-augmented")).toBe(true);
   });
 
   it("can disable OCR key-value grounding candidate for baseline benchmarking", async () => {
@@ -279,5 +392,6 @@ describe("InvoiceExtractionPipeline", () => {
     const result = await pipeline.extract(buildInput());
 
     expect(result.attempts.some((attempt) => attempt.source === "ocr-key-value-grounding")).toBe(false);
+    expect(result.attempts.some((attempt) => attempt.source === "ocr-key-value-augmented")).toBe(false);
   });
 });

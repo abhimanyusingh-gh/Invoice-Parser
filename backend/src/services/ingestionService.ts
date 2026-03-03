@@ -29,6 +29,7 @@ interface FieldProvenanceEntry {
   page?: number;
   bbox?: [number, number, number, number];
   bboxNormalized?: [number, number, number, number];
+  bboxModel?: [number, number, number, number];
   blockIndex?: number;
 }
 
@@ -554,7 +555,9 @@ async function persistFieldOverlayImages(input: {
     return new Map<string, string>();
   }
 
-  const entries = Object.entries(input.fieldProvenance).filter(([, value]) => value.bbox || value.bboxNormalized);
+  const entries = Object.entries(input.fieldProvenance).filter(
+    ([, value]) => value.bbox || value.bboxNormalized || value.bboxModel
+  );
   if (entries.length === 0) {
     return new Map<string, string>();
   }
@@ -762,8 +765,16 @@ function resolveFieldOverlayBox(
 
   const bbox = provenance.bbox;
   const bboxNormalized = provenance.bboxNormalized;
+  const bboxModel = provenance.bboxModel;
   if (bboxNormalized) {
     const normalized = normalizeUnitBox(bboxNormalized);
+    if (normalized) {
+      return normalized;
+    }
+  }
+
+  if (bboxModel) {
+    const normalized = normalizeModelBox(bboxModel);
     if (normalized) {
       return normalized;
     }
@@ -870,7 +881,8 @@ function parseFieldProvenance(value: string | undefined): Record<string, FieldPr
     const candidate = rawEntry as Partial<FieldProvenanceEntry>;
     const bbox = normalizeBoxTuple(candidate.bbox);
     const bboxNormalized = normalizeBoxTuple(candidate.bboxNormalized);
-    if (!bbox && !bboxNormalized) {
+    const bboxModel = normalizeBoxTuple(candidate.bboxModel);
+    if (!bbox && !bboxNormalized && !bboxModel) {
       continue;
     }
 
@@ -879,6 +891,7 @@ function parseFieldProvenance(value: string | undefined): Record<string, FieldPr
       page: typeof candidate.page === "number" && Number.isFinite(candidate.page) ? Math.max(1, Math.round(candidate.page)) : 1,
       ...(bbox ? { bbox } : {}),
       ...(bboxNormalized ? { bboxNormalized } : {}),
+      ...(bboxModel ? { bboxModel } : {}),
       ...(typeof candidate.blockIndex === "number" && Number.isFinite(candidate.blockIndex)
         ? { blockIndex: Math.max(0, Math.round(candidate.blockIndex)) }
         : {})

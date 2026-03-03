@@ -137,6 +137,21 @@ export class InvoiceExtractionPipeline {
           source: "ocr-key-value-grounding"
         });
       }
+      const augmentedKeyValueText =
+        keyValueText.length > 0 ? buildAugmentedGroundingText(keyValueText, blockText, rawText) : "";
+      if (
+        augmentedKeyValueText.length > 0 &&
+        !isNearDuplicateText(augmentedKeyValueText, rawText) &&
+        !isNearDuplicateText(augmentedKeyValueText, blockText) &&
+        !isNearDuplicateText(augmentedKeyValueText, keyValueText)
+      ) {
+        extractionCandidates.push({
+          text: augmentedKeyValueText,
+          provider: ocrProvider,
+          confidence: ocrConfidence,
+          source: "ocr-key-value-augmented"
+        });
+      }
 
       if (rawText.length === 0 && blockText.length === 0) {
         processingIssues.push("OCR provider returned empty text.");
@@ -277,12 +292,21 @@ export class InvoiceExtractionPipeline {
         mode,
         hints: {
           mimeType: input.mimeType,
+          languageHint: detectedLanguage.code,
           documentLanguage: detectedLanguage.code,
           documentLanguageConfidence: detectedLanguage.confidence,
-          documentContext: {
-            originalDocumentDataUrl: buildDocumentDataUrl(input.fileBuffer, input.mimeType),
-            pageImages: ocrPageImages
-          },
+          ...(preOcrLanguage.code !== "und"
+            ? {
+                preOcrLanguage: preOcrLanguage.code,
+                preOcrLanguageConfidence: preOcrLanguage.confidence
+              }
+            : {}),
+          ...(postOcrLanguage.code !== "und"
+            ? {
+                postOcrLanguage: postOcrLanguage.code,
+                postOcrLanguageConfidence: postOcrLanguage.confidence
+              }
+            : {}),
           vendorNameHint: template?.vendorName,
           vendorTemplateMatched: Boolean(template),
           fieldCandidates,
@@ -764,6 +788,7 @@ function addFieldDiagnosticsToMetadata(params: {
       page: number;
       bbox: [number, number, number, number];
       bboxNormalized?: [number, number, number, number];
+      bboxModel?: [number, number, number, number];
       blockIndex?: number;
     }
   > = {};
@@ -798,6 +823,7 @@ function addFieldDiagnosticsToMetadata(params: {
       page: block?.page ?? 1,
       bbox: block?.bbox ?? [0, 0, 0, 0],
       ...(block?.bboxNormalized ? { bboxNormalized: block.bboxNormalized } : {}),
+      ...(block?.bboxModel ? { bboxModel: block.bboxModel } : {}),
       ...(typeof matched?.index === "number" ? { blockIndex: matched.index } : {})
     };
   }
@@ -1027,22 +1053,6 @@ function blockShapePenalty(field: keyof ParsedInvoiceData, text: string): number
   return linePenalty + lengthPenalty;
 }
 
-function buildDocumentDataUrl(fileBuffer: Buffer, mimeType: string): string | undefined {
-  if (fileBuffer.length === 0) {
-    return undefined;
-  }
-
-  if (!mimeType.startsWith("image/") && mimeType !== "application/pdf") {
-    return undefined;
-  }
-
-  if (fileBuffer.length > 8 * 1024 * 1024) {
-    return undefined;
-  }
-
-  return `data:${mimeType};base64,${fileBuffer.toString("base64")}`;
-}
-
 function buildKeyValueGroundingText(blocks: OcrBlock[]): string {
   if (blocks.length < 2) {
     return "";
@@ -1110,6 +1120,17 @@ function buildKeyValueGroundingText(blocks: OcrBlock[]): string {
   }
 
   return [...new Set(lines)].join("\n");
+}
+
+function buildAugmentedGroundingText(keyValueText: string, blockText: string, rawText: string): string {
+  const sections = [keyValueText, blockText, rawText]
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0);
+  if (sections.length < 2) {
+    return "";
+  }
+
+  return sections.join("\n\n");
 }
 
 function inferBlockScale(bbox: [number, number, number, number]): "normalized" | "pixel" {

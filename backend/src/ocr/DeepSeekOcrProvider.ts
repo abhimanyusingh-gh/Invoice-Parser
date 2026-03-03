@@ -11,11 +11,9 @@ const SUPPORTED_MIME_TYPES = new Set([
   "application/pdf"
 ]);
 const RETRYABLE_NETWORK_ERROR_CODES = new Set(["ECONNREFUSED", "ECONNRESET", "ETIMEDOUT", "EHOSTUNREACH"]);
-const DEFAULT_PROMPT = "<|grounding|>Convert page to markdown.";
-const KEY_VALUE_PROMPT_INSTRUCTION =
-  "Return a `Key-Value Pairs` section first. Each line must follow `- <label>: <value>`. " +
-  "Never return bare values without their source label. Preserve original language labels and value formatting.";
-const DEFAULT_MAX_TOKENS = 512;
+const DEFAULT_PROMPT =
+  "Transcribe all visible text exactly as written. Preserve numbers, punctuation, spacing, and line breaks. Do not summarize. Do not format as key-value pairs.";
+const DEFAULT_MAX_TOKENS = 2048;
 const DEFAULT_TIMEOUT_MS = 3_600_000;
 
 interface OcrDocumentApiResponse {
@@ -41,6 +39,7 @@ interface DeepSeekOcrProviderOptions {
   timeoutMs?: number;
   prompt?: string;
   maxTokens?: number;
+  // Maintained for backward compatibility; prompt output is now always transcription-only.
   enforceKeyValuePairs?: boolean;
   httpClient?: DeepSeekHttpClient;
 }
@@ -53,7 +52,6 @@ export class DeepSeekOcrProvider implements OcrProvider {
   private readonly timeoutMs: number;
   private readonly prompt: string;
   private readonly maxTokens: number;
-  private readonly enforceKeyValuePairs: boolean;
   private readonly httpClient: DeepSeekHttpClient;
 
   constructor(options?: DeepSeekOcrProviderOptions) {
@@ -62,7 +60,6 @@ export class DeepSeekOcrProvider implements OcrProvider {
     this.timeoutMs = options?.timeoutMs ?? readTimeoutMsFromEnv();
     this.prompt = normalizePrompt(options?.prompt ?? process.env.DEEPSEEK_OCR_PROMPT ?? DEFAULT_PROMPT);
     this.maxTokens = normalizeMaxTokens(options?.maxTokens ?? readMaxTokensFromEnv());
-    this.enforceKeyValuePairs = options?.enforceKeyValuePairs ?? true;
     const baseUrl = options?.baseUrl ?? process.env.DEEPSEEK_BASE_URL ?? "http://localhost:8000/v1";
     this.httpClient = options?.httpClient ?? axios.create({ baseURL: baseUrl });
   }
@@ -91,7 +88,7 @@ export class DeepSeekOcrProvider implements OcrProvider {
       model: this.model,
       document: `data:${mimeType};base64,${buffer.toString("base64")}`,
       includeLayout: true,
-      prompt: buildPrompt(this.prompt, options?.languageHint, this.enforceKeyValuePairs),
+      prompt: buildPrompt(this.prompt, options?.languageHint),
       maxTokens: this.maxTokens
     };
 
@@ -250,19 +247,12 @@ function normalizePrompt(value: string): string {
   return trimmed.length > 0 ? trimmed : DEFAULT_PROMPT;
 }
 
-function buildPrompt(
-  prompt: string,
-  languageHint: string | undefined,
-  enforceKeyValuePairs: boolean
-): string {
+function buildPrompt(prompt: string, languageHint: string | undefined): string {
   const sections: string[] = [prompt];
-  if (enforceKeyValuePairs) {
-    sections.push(KEY_VALUE_PROMPT_INSTRUCTION);
-  }
 
   const normalizedHint = normalizeLanguageHint(languageHint);
   if (normalizedHint) {
-    sections.push(`Document language hint: ${normalizedHint}. Preserve native labels and values.`);
+    sections.push(`Document language hint: ${normalizedHint}. Preserve native language.`);
   }
 
   return sections.join("\n\n").trim();
