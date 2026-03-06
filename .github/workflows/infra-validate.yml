@@ -73,3 +73,24 @@ jobs:
           cd infra/modules/${{ matrix.module }}
           terraform init -backend=false
           terraform validate
+
+  localstack-integration:
+    name: LocalStack Integration Tests
+    runs-on: ubuntu-latest
+    needs: [terraform-check, module-validate]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.6"
+          terraform_wrapper: false
+
+      - name: Run LocalStack integration tests
+        run: infra/tests/localstack-test.sh
+
+      - name: Cleanup LocalStack (fallback)
+        if: always()
+        run: |
+          terraform -chdir=infra/tests destroy -auto-approve -input=false 2>/dev/null || true
+          docker compose -f infra/tests/docker-compose.localstack.yml down -v 2>/dev/null || true
