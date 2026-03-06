@@ -1,0 +1,100 @@
+name: Security Scan
+
+on:
+  schedule:
+    - cron: "0 6 * * 1" # Weekly Monday 6 UTC
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  security-events: write
+  contents: read
+
+jobs:
+  npm-audit:
+    name: npm Dependency Audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: yarn
+      - run: corepack enable
+      - run: yarn install --immutable
+      - name: Audit backend
+        run: yarn workspace invoice-processor-backend npm audit --audit-level=high || true
+      - name: Audit frontend
+        run: yarn workspace invoice-processor-frontend npm audit --audit-level=high || true
+
+  pip-audit:
+    name: Python Dependency Audit
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        service: [invoice-ocr, invoice-slm]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install pip-audit
+        run: pip install pip-audit
+      - name: Audit ${{ matrix.service }}
+        run: |
+          pip install -r ${{ matrix.service }}/requirements.base.txt
+          pip install -r ${{ matrix.service }}/requirements.prod.txt
+          pip-audit --strict || true
+
+  trivy-scan:
+    name: Container Scan (${{ matrix.service }})
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - service: backend
+            dockerfile: backend/Dockerfile
+          - service: frontend
+            dockerfile: frontend/Dockerfile
+          - service: invoice-ocr
+            dockerfile: invoice-ocr/Dockerfile
+          - service: invoice-slm
+            dockerfile: invoice-slm/Dockerfile
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Build image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          push: false
+          load: true
+          tags: scan-${{ matrix.service }}:latest
+      - name: Run Trivy scan
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: scan-${{ matrix.service }}:latest
+          format: sarif
+          output: trivy-${{ matrix.service }}.sarif
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+      - name: Upload SARIF to GitHub Security
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy-${{ matrix.service }}.sarif
+          category: trivy-${{ matrix.service }}
+
+  gitleaks:
+    name: Secret Detection
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Run gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

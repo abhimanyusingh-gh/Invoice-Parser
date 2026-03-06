@@ -1,0 +1,136 @@
+name: Deploy Staging
+
+on:
+  push:
+    branches: [main]
+
+concurrency:
+  group: deploy-staging
+  cancel-in-progress: false
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
+  ECR_REPOSITORY: ${{ vars.ECR_REPOSITORY || 'invoice-processor-backend' }}
+  PROJECT_NAME: invoice-processor
+
+jobs:
+  build-push:
+    name: Build & Push Images
+    runs-on: ubuntu-latest
+    outputs:
+      image_tag: ${{ steps.meta.outputs.image_tag }}
+      backend_image: ${{ steps.meta.outputs.backend_image }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Generate image metadata
+        id: meta
+        run: |
+          IMAGE_TAG="${GITHUB_SHA::7}-$(date +%Y%m%d%H%M%S)"
+          echo "image_tag=$IMAGE_TAG" >> "$GITHUB_OUTPUT"
+          echo "backend_image=${{ secrets.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:$IMAGE_TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN_STAGING }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build and push backend
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: backend/Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.backend_image }}
+          platforms: linux/amd64
+          cache-from: type=gha,scope=backend-staging
+          cache-to: type=gha,mode=max,scope=backend-staging
+
+  terraform-apply:
+    name: Terraform Apply (Staging)
+    needs: build-push
+    runs-on: ubuntu-latest
+    environment: staging
+    env:
+      TF_DIR: infra/terraform
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN_STAGING }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.6"
+
+      - name: Terraform init
+        run: terraform -chdir=${{ env.TF_DIR }} init -input=false
+
+      - name: Terraform validate
+        run: terraform -chdir=${{ env.TF_DIR }} validate
+
+      - name: Terraform plan
+        run: |
+          terraform -chdir=${{ env.TF_DIR }} plan \
+            -input=false \
+            -var-file="environments/stg.tfvars" \
+            -var="aws_region=${{ env.AWS_REGION }}" \
+            -var="environment=stg" \
+            -var="app_image=${{ needs.build-push.outputs.backend_image }}" \
+            -out=tfplan
+
+      - name: Terraform apply
+        run: terraform -chdir=${{ env.TF_DIR }} apply -input=false -auto-approve tfplan
+
+  smoke-test:
+    name: Post-Deploy Smoke Test
+    needs: terraform-apply
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Wait for deployment propagation
+        run: sleep 30
+      - name: Verify health endpoint
+        if: vars.STAGING_API_URL != ''
+        run: |
+          for i in 1 2 3 4 5; do
+            STATUS=$(curl -sf -o /dev/null -w "%{http_code}" "${{ vars.STAGING_API_URL }}/health" || echo "000")
+            if [ "$STATUS" = "200" ]; then
+              echo "Health check passed"
+              exit 0
+            fi
+            echo "Attempt $i: status=$STATUS, retrying..."
+            sleep 10
+          done
+          echo "Health check failed after 5 attempts"
+          exit 1
+
+  notify:
+    name: Notify
+    needs: [build-push, terraform-apply, smoke-test]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Slack notification
+        if: vars.SLACK_WEBHOOK_URL != ''
+        uses: slackapi/slack-github-action@v2.1.0
+        with:
+          webhook: ${{ vars.SLACK_WEBHOOK_URL }}
+          webhook-type: incoming-webhook
+          payload: |
+            {
+              "text": "${{ needs.smoke-test.result == 'success' && ':white_check_mark:' || ':x:' }} Staging deploy *${{ needs.build-push.outputs.image_tag }}* ${{ needs.smoke-test.result == 'success' && 'succeeded' || 'failed' }}\n<${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View run>"
+            }

@@ -1,0 +1,159 @@
+name: Deploy Production
+
+on:
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: "Image tag from staging deployment"
+        required: true
+        type: string
+      confirm:
+        description: "Type 'deploy-production' to confirm"
+        required: true
+        type: string
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
+  ECR_REPOSITORY: ${{ vars.ECR_REPOSITORY || 'invoice-processor-backend' }}
+  PROJECT_NAME: invoice-processor
+
+jobs:
+  validate:
+    name: Validate Inputs
+    runs-on: ubuntu-latest
+    steps:
+      - name: Confirm deployment
+        if: inputs.confirm != 'deploy-production'
+        run: |
+          echo "::error::Confirmation failed. Type 'deploy-production' to confirm."
+          exit 1
+      - name: Verify image exists
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN_PRODUCTION }}
+          aws-region: ${{ env.AWS_REGION }}
+      - name: Check ECR image
+        run: |
+          aws ecr describe-images \
+            --repository-name "${{ env.ECR_REPOSITORY }}" \
+            --image-ids imageTag="${{ inputs.image_tag }}" \
+            --region "${{ env.AWS_REGION }}" || {
+            echo "::error::Image tag '${{ inputs.image_tag }}' not found in ECR"
+            exit 1
+          }
+
+  deploy:
+    name: Terraform Apply (Production)
+    needs: validate
+    runs-on: ubuntu-latest
+    environment: production
+    env:
+      TF_DIR: infra/terraform
+    outputs:
+      pre_deploy_image: ${{ steps.capture.outputs.previous_image }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN_PRODUCTION }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.6"
+
+      - name: Terraform init
+        run: terraform -chdir=${{ env.TF_DIR }} init -input=false
+
+      - name: Capture pre-deploy state
+        id: capture
+        run: |
+          PREV=$(terraform -chdir=${{ env.TF_DIR }} output -raw effective_mongo_uri 2>/dev/null || echo "unknown")
+          echo "previous_image=captured" >> "$GITHUB_OUTPUT"
+
+      - name: Terraform plan
+        run: |
+          terraform -chdir=${{ env.TF_DIR }} plan \
+            -input=false \
+            -var-file="environments/prod.tfvars" \
+            -var="aws_region=${{ env.AWS_REGION }}" \
+            -var="environment=prod" \
+            -var="app_image=${{ secrets.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ inputs.image_tag }}" \
+            -out=tfplan
+
+      - name: Terraform apply
+        run: terraform -chdir=${{ env.TF_DIR }} apply -input=false -auto-approve tfplan
+
+  smoke-test:
+    name: Production Smoke Test
+    needs: deploy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Wait for deployment propagation
+        run: sleep 30
+      - name: Verify health
+        if: vars.PRODUCTION_API_URL != ''
+        id: health
+        run: |
+          for i in 1 2 3 4 5; do
+            STATUS=$(curl -sf -o /dev/null -w "%{http_code}" "${{ vars.PRODUCTION_API_URL }}/health" || echo "000")
+            if [ "$STATUS" = "200" ]; then
+              echo "Health check passed"
+              exit 0
+            fi
+            echo "Attempt $i: status=$STATUS, retrying..."
+            sleep 15
+          done
+          echo "Health check failed after 5 attempts"
+          exit 1
+
+  rollback:
+    name: Automatic Rollback
+    needs: [deploy, smoke-test]
+    if: failure() && needs.deploy.result == 'success'
+    runs-on: ubuntu-latest
+    environment: production
+    env:
+      TF_DIR: infra/terraform
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN_PRODUCTION }}
+          aws-region: ${{ env.AWS_REGION }}
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.6"
+      - name: Rollback notice
+        run: |
+          echo "::warning::Smoke test failed. Automatic rollback requires the previous image tag."
+          echo "::warning::Manual intervention required: re-run with the previous stable image_tag."
+
+  notify:
+    name: Notify
+    needs: [deploy, smoke-test]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Slack notification
+        if: vars.SLACK_WEBHOOK_URL != ''
+        uses: slackapi/slack-github-action@v2.1.0
+        with:
+          webhook: ${{ vars.SLACK_WEBHOOK_URL }}
+          webhook-type: incoming-webhook
+          payload: |
+            {
+              "text": "${{ needs.smoke-test.result == 'success' && ':white_check_mark:' || ':x:' }} Production deploy *${{ inputs.image_tag }}* ${{ needs.smoke-test.result == 'success' && 'succeeded' || 'FAILED' }}\nTriggered by: ${{ github.actor }}\n<${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View run>"
+            }

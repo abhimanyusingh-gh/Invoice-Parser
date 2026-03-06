@@ -1,0 +1,192 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend-typecheck:
+    name: Backend Typecheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: yarn
+      - run: corepack enable
+      - run: yarn install --immutable
+      - run: yarn workspace invoice-processor-backend run build
+
+  backend-test:
+    name: Backend Unit Tests
+    needs: backend-typecheck
+    runs-on: ubuntu-latest
+    services:
+      mongo:
+        image: mongo:7
+        ports:
+          - 27017:27017
+        options: >-
+          --health-cmd "mongosh --eval 'db.runCommand({ ping: 1 })'"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      ENV: local
+      MONGO_URI: mongodb://127.0.0.1:27017/invoice_processor_test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: yarn
+      - run: corepack enable
+      - run: yarn install --immutable
+      - name: Run unit tests with coverage
+        run: yarn workspace invoice-processor-backend run coverage
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-coverage
+          path: backend/coverage/
+          retention-days: 7
+
+  backend-knip:
+    name: Backend Dead Code Analysis
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: yarn
+      - run: corepack enable
+      - run: yarn install --immutable
+      - run: yarn run knip
+
+  frontend-typecheck:
+    name: Frontend Typecheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: yarn
+      - run: corepack enable
+      - run: yarn install --immutable
+      - name: TypeScript type check
+        run: yarn workspace invoice-processor-frontend exec tsc --noEmit
+
+  frontend-build:
+    name: Frontend Build
+    needs: frontend-typecheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: yarn
+      - run: corepack enable
+      - run: yarn install --immutable
+      - run: yarn workspace invoice-processor-frontend run build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: frontend-dist
+          path: frontend/dist/
+          retention-days: 3
+
+  frontend-test:
+    name: Frontend Unit Tests
+    needs: frontend-typecheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: yarn
+      - run: corepack enable
+      - run: yarn install --immutable
+      - name: Run frontend tests
+        run: yarn workspace invoice-processor-frontend run test
+
+  python-ocr-check:
+    name: OCR Service Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install -r invoice-ocr/requirements.base.txt
+          pip install -r invoice-ocr/requirements.prod.txt
+      - name: Syntax check
+        run: python -m py_compile invoice-ocr/server.py
+      - name: Check imports
+        run: python -c "import sys; sys.path.insert(0, 'invoice-ocr'); import server"
+
+  python-slm-check:
+    name: SLM Service Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install -r invoice-slm/requirements.base.txt
+          pip install -r invoice-slm/requirements.prod.txt
+      - name: Syntax check
+        run: python -m py_compile invoice-slm/server.py
+      - name: Check imports
+        run: python -c "import sys; sys.path.insert(0, 'invoice-slm'); import server"
+
+  docker-build:
+    name: Docker Build (${{ matrix.service }})
+    needs: [backend-test, frontend-build]
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - service: backend
+            dockerfile: backend/Dockerfile
+          - service: frontend
+            dockerfile: frontend/Dockerfile
+          - service: invoice-ocr
+            dockerfile: invoice-ocr/Dockerfile
+          - service: invoice-slm
+            dockerfile: invoice-slm/Dockerfile
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Build ${{ matrix.service }} image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          push: false
+          tags: invoice-processor-${{ matrix.service }}:ci-${{ github.sha }}
+          cache-from: type=gha,scope=${{ matrix.service }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.service }}
+      - name: Scan image with Trivy
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: invoice-processor-${{ matrix.service }}:ci-${{ github.sha }}
+          format: table
+          severity: CRITICAL,HIGH
+          exit-code: 0

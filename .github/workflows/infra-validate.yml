@@ -1,0 +1,75 @@
+name: Infrastructure Validation
+
+on:
+  pull_request:
+    paths:
+      - "infra/**"
+  push:
+    branches: [main]
+    paths:
+      - "infra/**"
+
+jobs:
+  terraform-check:
+    name: Terraform Validate
+    runs-on: ubuntu-latest
+    env:
+      TF_DIR: infra/terraform
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.6"
+
+      - name: Check formatting
+        run: terraform fmt -recursive -check infra/
+
+      - name: Init (backend disabled for validation)
+        run: |
+          terraform -chdir=${{ env.TF_DIR }} init \
+            -input=false \
+            -backend=false
+
+      - name: Validate
+        run: terraform -chdir=${{ env.TF_DIR }} validate
+
+  tflint:
+    name: TFLint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: terraform-linters/setup-tflint@v4
+        with:
+          tflint_version: latest
+
+      - name: Init TFLint
+        run: tflint --init
+        working-directory: infra/terraform
+
+      - name: Run TFLint on root
+        run: tflint --recursive
+        working-directory: infra/
+
+  module-validate:
+    name: Validate Modules
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        module:
+          - aws_documentdb_cluster
+          - aws_iam_instance_profile
+          - aws_s3_bucket
+          - aws_scheduled_ec2_service
+          - aws_sts_access_role
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.6"
+      - name: Validate ${{ matrix.module }}
+        run: |
+          cd infra/modules/${{ matrix.module }}
+          terraform init -backend=false
+          terraform validate
