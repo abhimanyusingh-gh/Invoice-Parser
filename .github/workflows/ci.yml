@@ -22,7 +22,7 @@ jobs:
           cache: yarn
       - run: corepack enable
       - run: yarn install --immutable
-      - run: yarn workspace invoice-processor-backend run build
+      - run: yarn workspace billforge-backend run build
 
   backend-test:
     name: Backend Unit Tests
@@ -40,7 +40,7 @@ jobs:
           --health-retries 5
     env:
       ENV: local
-      MONGO_URI: mongodb://127.0.0.1:27017/invoice_processor_test
+      MONGO_URI: mongodb://127.0.0.1:27017/billforge_test
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -50,7 +50,7 @@ jobs:
       - run: corepack enable
       - run: yarn install --immutable
       - name: Run unit tests with coverage
-        run: yarn workspace invoice-processor-backend run coverage
+        run: yarn workspace billforge-backend run coverage
       - name: Upload coverage report
         if: always()
         uses: actions/upload-artifact@v4
@@ -84,7 +84,7 @@ jobs:
       - run: corepack enable
       - run: yarn install --immutable
       - name: TypeScript type check
-        run: yarn workspace invoice-processor-frontend exec tsc --noEmit
+        run: yarn workspace billforge-frontend exec tsc --noEmit
 
   frontend-build:
     name: Frontend Build
@@ -98,7 +98,7 @@ jobs:
           cache: yarn
       - run: corepack enable
       - run: yarn install --immutable
-      - run: yarn workspace invoice-processor-frontend run build
+      - run: yarn workspace billforge-frontend run build
       - uses: actions/upload-artifact@v4
         with:
           name: frontend-dist
@@ -118,7 +118,7 @@ jobs:
       - run: corepack enable
       - run: yarn install --immutable
       - name: Run frontend tests
-        run: yarn workspace invoice-processor-frontend run test
+        run: yarn workspace billforge-frontend run test
 
   python-ocr-check:
     name: OCR Service Check
@@ -195,13 +195,13 @@ jobs:
           file: ${{ matrix.dockerfile }}
           push: false
           load: true
-          tags: invoice-processor-${{ matrix.service }}:ci-${{ github.sha }}
+          tags: billforge-${{ matrix.service }}:ci-${{ github.sha }}
           cache-from: type=gha,scope=${{ matrix.service }}
           cache-to: type=gha,mode=max,scope=${{ matrix.service }}
       - name: Scan image with Trivy
         uses: aquasecurity/trivy-action@0.31.0
         with:
-          image-ref: invoice-processor-${{ matrix.service }}:ci-${{ github.sha }}
+          image-ref: billforge-${{ matrix.service }}:ci-${{ github.sha }}
           format: table
           severity: CRITICAL,HIGH
           exit-code: 0

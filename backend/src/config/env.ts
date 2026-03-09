@@ -22,8 +22,8 @@ const envSchema = z.object({
   APP_MANIFEST_PATH: z.string().optional(),
   FRONTEND_BASE_URL: z.string().default("http://localhost:5173"),
 
-  STS_CLIENT_ID: z.string().default("invoice-processor-local-client"),
-  STS_CLIENT_SECRET: z.string().default("invoice-processor-local-secret"),
+  STS_CLIENT_ID: z.string().default("billforge-local-client"),
+  STS_CLIENT_SECRET: z.string().default("billforge-local-secret"),
   STS_SCOPES: z.string().default("openid profile email offline_access"),
   STS_REDIRECT_URI: z
     .string()
@@ -155,7 +155,7 @@ const envSchema = z.object({
   LOCAL_FILE_STORE_ROOT: z.string().default(".local-run/artifacts"),
   S3_FILE_STORE_BUCKET: z.string().optional(),
   S3_FILE_STORE_REGION: z.string().default("us-east-1"),
-  S3_FILE_STORE_PREFIX: z.string().default("invoice-processor"),
+  S3_FILE_STORE_PREFIX: z.string().default("billforge"),
   S3_FILE_STORE_ENDPOINT: z.string().optional(),
   S3_FILE_STORE_FORCE_PATH_STYLE: z
     .string()
@@ -169,6 +169,10 @@ const envSchema = z.object({
   TALLY_ENDPOINT: z.string().optional(),
   TALLY_COMPANY: z.string().optional(),
   TALLY_PURCHASE_LEDGER: z.string().default("Purchase"),
+  TALLY_CGST_LEDGER: z.string().default("Input CGST"),
+  TALLY_SGST_LEDGER: z.string().default("Input SGST"),
+  TALLY_IGST_LEDGER: z.string().default("Input IGST"),
+  TALLY_CESS_LEDGER: z.string().default("Input Cess"),
   DEFAULT_APPROVER: z.string().default("system"),
   INVITE_EMAIL_PROVIDER: z.enum(["smtp", "sendgrid"]).default("smtp"),
   INVITE_SMTP_HOST: z.string().default("mailhog"),

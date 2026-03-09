@@ -1,0 +1,63 @@
+{
+  "tenants": [
+    {
+      "id": "665e0a1b2f3a4b5c6d7e8f01",
+      "name": "ACME Corporation",
+      "onboardingStatus": "completed"
+    },
+    {
+      "id": "665e0a1b2f3a4b5c6d7e8f02",
+      "name": "Pinnacle Industries",
+      "onboardingStatus": "completed"
+    },
+    {
+      "id": "665e0a1b2f3a4b5c6d7e8f03",
+      "name": "Platform Operations",
+      "onboardingStatus": "completed"
+    }
+  ],
+  "users": [
+    {
+      "email": "admin@acme.test",
+      "password": "AcmeAdmin1!",
+      "displayName": "ACME Admin",
+      "tenantId": "665e0a1b2f3a4b5c6d7e8f01",
+      "role": "TENANT_ADMIN"
+    },
+    {
+      "email": "alice@acme.test",
+      "password": "AliceAcme1!",
+      "displayName": "Alice Nguyen",
+      "tenantId": "665e0a1b2f3a4b5c6d7e8f01",
+      "role": "MEMBER"
+    },
+    {
+      "email": "bob@acme.test",
+      "password": "BobAcme1!",
+      "displayName": "Bob Martinez",
+      "tenantId": "665e0a1b2f3a4b5c6d7e8f01",
+      "role": "MEMBER"
+    },
+    {
+      "email": "admin@pinnacle.test",
+      "password": "PinnacleAdmin1!",
+      "displayName": "Pinnacle Admin",
+      "tenantId": "665e0a1b2f3a4b5c6d7e8f02",
+      "role": "TENANT_ADMIN"
+    },
+    {
+      "email": "carol@pinnacle.test",
+      "password": "CarolPinnacle1!",
+      "displayName": "Carol Chen",
+      "tenantId": "665e0a1b2f3a4b5c6d7e8f02",
+      "role": "MEMBER"
+    },
+    {
+      "email": "platform-admin@local.test",
+      "password": "PlatformAdmin1!",
+      "displayName": "Platform Administrator",
+      "tenantId": "665e0a1b2f3a4b5c6d7e8f03",
+      "role": "TENANT_ADMIN"
+    }
+  ]
+}

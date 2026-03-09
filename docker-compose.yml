@@ -3,7 +3,7 @@ services:
     build:
       context: .
       dockerfile: backend/Dockerfile
-    container_name: invoice-processor-backend
+    container_name: billforge-backend
     restart: unless-stopped
     depends_on:
       mongo:
@@ -27,11 +27,11 @@ services:
       ENV: ${ENV:-local}
       NODE_ENV: development
       PORT: "4000"
-      MONGO_URI: mongodb://mongo:27017/invoice_processor
+      MONGO_URI: mongodb://mongo:27017/billforge
       APP_MANIFEST_PATH: ${APP_MANIFEST_PATH:-}
       FRONTEND_BASE_URL: ${FRONTEND_BASE_URL:-http://localhost:5173}
-      STS_CLIENT_ID: ${STS_CLIENT_ID:-invoice-processor-local-client}
-      STS_CLIENT_SECRET: ${STS_CLIENT_SECRET:-invoice-processor-local-secret}
+      STS_CLIENT_ID: ${STS_CLIENT_ID:-billforge-local-client}
+      STS_CLIENT_SECRET: ${STS_CLIENT_SECRET:-billforge-local-secret}
       STS_SCOPES: ${STS_SCOPES:-openid profile email offline_access}
       STS_REDIRECT_URI: ${STS_REDIRECT_URI:-http://localhost:4000/auth/callback}
       STS_LOCAL_PUBLIC_BASE_URL: ${STS_LOCAL_PUBLIC_BASE_URL:-http://localhost:8090}
@@ -69,8 +69,8 @@ services:
       EMAIL_SIMULATION_SAMPLE_DIR: ${EMAIL_SIMULATION_SAMPLE_DIR:-/app/sample-invoices/inbox}
       EMAIL_MAILBOX: ${EMAIL_MAILBOX:-INBOX}
       EMAIL_FROM_FILTER: ${EMAIL_FROM_FILTER:-}
-      GMAIL_OAUTH_CLIENT_ID: ${GMAIL_OAUTH_CLIENT_ID:-invoice-processor-local-client}
-      GMAIL_OAUTH_CLIENT_SECRET: ${GMAIL_OAUTH_CLIENT_SECRET:-invoice-processor-local-secret}
+      GMAIL_OAUTH_CLIENT_ID: ${GMAIL_OAUTH_CLIENT_ID:-billforge-local-client}
+      GMAIL_OAUTH_CLIENT_SECRET: ${GMAIL_OAUTH_CLIENT_SECRET:-billforge-local-secret}
       GMAIL_OAUTH_REDIRECT_URI: ${GMAIL_OAUTH_REDIRECT_URI:-http://localhost:4000/connect/gmail/callback}
       GMAIL_OAUTH_AUTH_URL: ${GMAIL_OAUTH_AUTH_URL:-http://localhost:8090/oauth2/authorize}
       GMAIL_OAUTH_TOKEN_URL: ${GMAIL_OAUTH_TOKEN_URL:-http://local-sts:8090/oauth2/token}
@@ -90,9 +90,9 @@ services:
       FIELD_VERIFIER_BASE_URL: ${FIELD_VERIFIER_BASE_URL:-http://host.docker.internal:8100/v1}
       FIELD_VERIFIER_TIMEOUT_MS: "20000"
       LOCAL_FILE_STORE_ROOT: ${LOCAL_FILE_STORE_ROOT:-/app/.local-run/artifacts}
-      S3_FILE_STORE_BUCKET: ${S3_FILE_STORE_BUCKET:-invoice-processor-local}
+      S3_FILE_STORE_BUCKET: ${S3_FILE_STORE_BUCKET:-billforge-local}
       S3_FILE_STORE_REGION: ${S3_FILE_STORE_REGION:-us-east-1}
-      S3_FILE_STORE_PREFIX: ${S3_FILE_STORE_PREFIX:-invoice-processor}
+      S3_FILE_STORE_PREFIX: ${S3_FILE_STORE_PREFIX:-billforge}
       S3_FILE_STORE_ENDPOINT: ${S3_FILE_STORE_ENDPOINT:-http://minio:9000}
       S3_FILE_STORE_FORCE_PATH_STYLE: ${S3_FILE_STORE_FORCE_PATH_STYLE:-true}
       CONFIDENCE_EXPECTED_MAX_TOTAL: "100000"
@@ -101,6 +101,10 @@ services:
       TALLY_ENDPOINT: http://tally.example.local
       TALLY_COMPANY: Demo Company
       TALLY_PURCHASE_LEDGER: Purchase
+      TALLY_CGST_LEDGER: ${TALLY_CGST_LEDGER:-Input CGST}
+      TALLY_SGST_LEDGER: ${TALLY_SGST_LEDGER:-Input SGST}
+      TALLY_IGST_LEDGER: ${TALLY_IGST_LEDGER:-Input IGST}
+      TALLY_CESS_LEDGER: ${TALLY_CESS_LEDGER:-Input Cess}
       INVITE_EMAIL_PROVIDER: ${INVITE_EMAIL_PROVIDER:-sendgrid}
       INVITE_SMTP_HOST: ${INVITE_SMTP_HOST:-mailhog}
       INVITE_SMTP_PORT: ${INVITE_SMTP_PORT:-1025}
@@ -118,7 +122,7 @@ services:
 
   minio:
     image: minio/minio:latest
-    container_name: invoice-processor-minio
+    container_name: billforge-minio
     restart: unless-stopped
     command: server /data --console-address ":9001"
     ports:
@@ -137,14 +141,14 @@ services:
 
   minio-init:
     image: minio/mc:latest
-    container_name: invoice-processor-minio-init
+    container_name: billforge-minio-init
     depends_on:
       minio:
         condition: service_healthy
     entrypoint: >
       /bin/sh -c "
       mc alias set local http://minio:9000 minioadmin minioadmin;
-      mc mb --ignore-existing local/invoice-processor-local;
+      mc mb --ignore-existing local/billforge-local;
       exit 0;
       "
 
@@ -154,7 +158,7 @@ services:
       dockerfile: frontend/Dockerfile
       args:
         VITE_API_BASE_URL: http://localhost:4000/api
-    container_name: invoice-processor-frontend
+    container_name: billforge-frontend
     restart: unless-stopped
     depends_on:
       - backend
@@ -163,18 +167,18 @@ services:
 
   mongo:
     image: mongo:7
-    container_name: invoice-processor-mongo
+    container_name: billforge-mongo
     restart: unless-stopped
     ports:
       - "27017:27017"
     environment:
-      MONGO_INITDB_DATABASE: invoice_processor
+      MONGO_INITDB_DATABASE: billforge
     volumes:
       - mongo_data:/data/db
 
   mongo-express:
     image: mongo-express:1.0.2
-    container_name: invoice-processor-mongo-express
+    container_name: billforge-mongo-express
     restart: unless-stopped
     depends_on:
       - mongo
@@ -186,7 +190,7 @@ services:
 
   mailhog:
     image: axllent/mailpit:latest
-    container_name: invoice-processor-mailhog
+    container_name: billforge-mailhog
     restart: unless-stopped
     ports:
       - "1025:1025"
@@ -196,7 +200,7 @@ services:
     build:
       context: .
       dockerfile: mailhog-oauth-wrapper/Dockerfile
-    container_name: invoice-processor-mailhog-oauth
+    container_name: billforge-mailhog-oauth
     restart: unless-stopped
     depends_on:
       - mailhog
@@ -219,17 +223,43 @@ services:
     build:
       context: .
       dockerfile: local-sts/Dockerfile
-    container_name: invoice-processor-local-sts
+    container_name: billforge-local-sts
     restart: unless-stopped
     ports:
       - "8090:8090"
     environment:
       PORT: "8090"
       ISSUER: http://local-sts:8090
-      CLIENT_ID: ${STS_CLIENT_ID:-invoice-processor-local-client}
-      CLIENT_SECRET: ${STS_CLIENT_SECRET:-invoice-processor-local-secret}
+      CLIENT_ID: ${STS_CLIENT_ID:-billforge-local-client}
+      CLIENT_SECRET: ${STS_CLIENT_SECRET:-billforge-local-secret}
       DEFAULT_USER_EMAIL: ${LOCAL_STS_DEFAULT_USER_EMAIL:-admin@local.test}
       DEFAULT_USER_NAME: ${LOCAL_STS_DEFAULT_USER_NAME:-Local Admin}
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.0
+    container_name: billforge-keycloak
+    restart: unless-stopped
+    command: start-dev --import-realm
+    ports:
+      - "8080:8080"
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: admin
+      KC_HTTP_ENABLED: "true"
+      KC_HOSTNAME_STRICT: "false"
+      KC_HEALTH_ENABLED: "true"
+      KC_METRICS_ENABLED: "false"
+      KC_DB: dev-mem
+    volumes:
+      - ./keycloak/realm-config.json:/opt/keycloak/data/import/realm-config.json:ro
+    healthcheck:
+      test: ["CMD-SHELL", "exec 3<>/dev/tcp/localhost/8080 && echo -e 'GET /health/ready HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n' >&3 && cat <&3 | grep -q '200'"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    profiles:
+      - keycloak
 
 volumes:
   mongo_data:

@@ -75,7 +75,16 @@ const invoiceSchema = new Schema(
         }
       },
       currency: { type: String },
-      notes: { type: [String], default: [] }
+      notes: { type: [String], default: [] },
+      gst: {
+        gstin: { type: String },
+        subtotalMinor: { type: Number },
+        cgstMinor: { type: Number },
+        sgstMinor: { type: Number },
+        igstMinor: { type: Number },
+        cessMinor: { type: Number },
+        totalTaxMinor: { type: Number }
+      }
     },
 
     status: { type: String, enum: InvoiceStatuses, required: true },
