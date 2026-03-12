@@ -7,6 +7,7 @@ import { buildLayoutGraph } from "./layoutGraph.js";
 import { validateInvoiceFields } from "./deterministicValidation.js";
 import { computeVendorFingerprint } from "./vendorFingerprint.js";
 import { templateFromParsed, type VendorTemplateSnapshot, type VendorTemplateStore } from "./vendorTemplateStore.js";
+import { buildCorrectionHint, type CorrectionEntry, type ExtractionLearningStore } from "./extractionLearningStore.js";
 import type { PipelineExtractionResult } from "./types.js";
 import { logger } from "../../utils/logger.js";
 import { detectInvoiceLanguage, detectInvoiceLanguageBeforeOcr, type DetectedInvoiceLanguage } from "./languageDetection.js";
@@ -29,6 +30,7 @@ interface ExtractionPipelineInput {
 interface ExtractionPipelineOptions {
   ocrHighConfidenceThreshold?: number;
   enableOcrKeyValueGrounding?: boolean;
+  llmAssistConfidenceThreshold?: number;
 }
 
 export class ExtractionPipelineError extends Error {
@@ -44,15 +46,18 @@ export class ExtractionPipelineError extends Error {
 export class InvoiceExtractionPipeline {
   private readonly ocrHighConfidenceThreshold: number;
   private readonly enableOcrKeyValueGrounding: boolean;
+  private readonly llmAssistConfidenceThreshold: number;
 
   constructor(
     private readonly ocrProvider: OcrProvider,
     private readonly fieldVerifier: FieldVerifier,
     private readonly templateStore: VendorTemplateStore,
+    private readonly learningStore: ExtractionLearningStore | undefined,
     options?: ExtractionPipelineOptions
   ) {
     this.ocrHighConfidenceThreshold = clampProbability(options?.ocrHighConfidenceThreshold ?? 0.88);
     this.enableOcrKeyValueGrounding = options?.enableOcrKeyValueGrounding ?? true;
+    this.llmAssistConfidenceThreshold = options?.llmAssistConfidenceThreshold ?? 85;
   }
 
   async extract(input: ExtractionPipelineInput): Promise<PipelineExtractionResult> {
@@ -289,7 +294,19 @@ export class InvoiceExtractionPipeline {
 
     const shouldVerify = this.fieldVerifier.name !== "noop";
     const verifierChangedFields: string[] = [];
+    let invoiceType = "other";
     if (shouldVerify) {
+      let priorCorrections: CorrectionEntry[] | undefined;
+      try {
+        if (this.learningStore) {
+          priorCorrections = await this.learningStore.findCorrections(
+            input.tenantId,
+            metadata.invoiceType ?? "other",
+            fingerprint.key
+          );
+        }
+      } catch { /* ignore */ }
+
       const mode: FieldVerificationMode = "relaxed";
       const verifierOutput = await this.fieldVerifier.verify({
         parsed,
@@ -316,9 +333,15 @@ export class InvoiceExtractionPipeline {
           vendorNameHint: template?.vendorName,
           vendorTemplateMatched: Boolean(template),
           fieldCandidates,
-          fieldRegions
+          fieldRegions,
+          priorCorrections: priorCorrections?.length
+            ? priorCorrections.map((c) => ({ field: c.field, hint: c.hint, count: c.count }))
+            : undefined
         }
       });
+
+      invoiceType = verifierOutput.invoiceType ?? "other";
+      metadata.invoiceType = invoiceType;
 
       const mergedParsed = mergeParsedWithVerification(parsed, verifierOutput.parsed, mode);
       const changedFields = detectChangedFields(parsed, mergedParsed);
@@ -348,6 +371,79 @@ export class InvoiceExtractionPipeline {
         referenceDate: input.referenceDate
       });
       metadata.verifierApplied = "true";
+
+      if (
+        this.llmAssistConfidenceThreshold > 0 &&
+        confidence.score < this.llmAssistConfidenceThreshold &&
+        ocrPageImages.length > 0
+      ) {
+        try {
+          const preLlmParsed = { ...parsed };
+          const llmPageImages = ocrPageImages.slice(0, 3);
+          const llmVerifierOutput = await this.fieldVerifier.verify({
+            parsed,
+            ocrText: heuristicResult.text,
+            ocrBlocks,
+            mode: "strict",
+            hints: {
+              mimeType: input.mimeType,
+              languageHint: detectedLanguage.code,
+              documentLanguage: detectedLanguage.code,
+              vendorTemplateMatched: Boolean(template),
+              fieldCandidates,
+              fieldRegions,
+              pageImages: llmPageImages,
+              llmAssist: true,
+              priorCorrections: priorCorrections?.length
+                ? priorCorrections.map((c) => ({ field: c.field, hint: c.hint, count: c.count }))
+                : undefined
+            }
+          });
+
+          const llmMerged = mergeParsedWithVerification(parsed, llmVerifierOutput.parsed, "strict");
+          const llmChangedFields = detectChangedFields(parsed, llmMerged);
+          if (llmChangedFields.length > 0) {
+            parsed = llmMerged;
+            strategy = `${strategy}+llm-assist`;
+            metadata.llmAssistChangedFields = llmChangedFields.join(",");
+
+            const effectiveOcrConfidence = Math.max(ocrConfidence ?? 0.6, 0.88);
+            confidence = this.assessConfidence(input, parsed, warnings, effectiveOcrConfidence);
+            validation = validateInvoiceFields({
+              parsed,
+              ocrText: heuristicResult.text,
+              expectedMaxTotal: input.expectedMaxTotal,
+              expectedMaxDueDays: input.expectedMaxDueDays,
+              referenceDate: input.referenceDate
+            });
+
+            if (this.learningStore) {
+              const corrections = llmChangedFields.map((field) => ({
+                field,
+                hint: buildCorrectionHint(
+                  field,
+                  preLlmParsed[field as keyof ParsedInvoiceData],
+                  parsed[field as keyof ParsedInvoiceData]
+                ),
+                count: 1,
+                lastSeen: new Date()
+              }));
+              await Promise.all([
+                this.learningStore.recordCorrections(input.tenantId, invoiceType, "invoice-type", corrections),
+                this.learningStore.recordCorrections(input.tenantId, fingerprint.key, "vendor", corrections)
+              ]);
+            }
+          }
+          metadata.llmAssistApplied = "true";
+        } catch (error) {
+          metadata.llmAssistApplied = "false";
+          metadata.llmAssistError = error instanceof Error ? error.message : String(error);
+          logger.warn("pipeline.llm_assist.failed", {
+            tenantId: input.tenantId,
+            error: error instanceof Error ? error.message : String(error)
+          });
+        }
+      }
     }
 
     if (!validation.valid) {

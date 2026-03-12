@@ -180,6 +180,18 @@ describe("local full-stack ingestion e2e", () => {
     invoiceDetails.forEach((response) => {
       expect(response.status).toBe(200);
       const detail = response.data;
+
+      // Every successfully extracted invoice should have an invoiceType classification
+      if (detail.metadata?.verifierApplied === "true") {
+        expect(typeof detail.metadata.invoiceType).toBe("string");
+        expect(detail.metadata.invoiceType.length).toBeGreaterThan(0);
+      }
+
+      // If LLM assist was applied, confidence should reflect the boost
+      if (detail.metadata?.llmAssistApplied === "true") {
+        expect(detail.metadata.llmAssistChangedFields).toBeDefined();
+      }
+
       const blocks = detail.ocrBlocks ?? [];
       if (blocks.length === 0) {
         return;

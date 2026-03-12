@@ -95,6 +95,7 @@ export interface RuntimeManifest {
   };
   extraction: {
     ocrHighConfidenceThreshold: number;
+    llmAssistConfidenceThreshold: number;
   };
   export: {
     tallyEndpoint: string;
@@ -164,7 +165,8 @@ const runtimeManifestSchema = z.object({
     .optional(),
   extraction: z
     .object({
-      ocrHighConfidenceThreshold: z.coerce.number().min(0).max(1).optional()
+      ocrHighConfidenceThreshold: z.coerce.number().min(0).max(1).optional(),
+      llmAssistConfidenceThreshold: z.coerce.number().int().min(0).max(100).optional()
     })
     .optional(),
   database: z
@@ -292,7 +294,9 @@ export function loadRuntimeManifest(): RuntimeManifest {
     },
     extraction: {
       ocrHighConfidenceThreshold:
-        parsed.extraction?.ocrHighConfidenceThreshold ?? defaults.extraction.ocrHighConfidenceThreshold
+        parsed.extraction?.ocrHighConfidenceThreshold ?? defaults.extraction.ocrHighConfidenceThreshold,
+      llmAssistConfidenceThreshold:
+        parsed.extraction?.llmAssistConfidenceThreshold ?? defaults.extraction.llmAssistConfidenceThreshold
     },
     export: {
       tallyEndpoint: parsed.export?.tallyEndpoint ?? defaults.export.tallyEndpoint,
@@ -395,7 +399,8 @@ function createDefaultManifest(): RuntimeManifest {
       }
     },
     extraction: {
-      ocrHighConfidenceThreshold: env.OCR_HIGH_CONFIDENCE_THRESHOLD
+      ocrHighConfidenceThreshold: env.OCR_HIGH_CONFIDENCE_THRESHOLD,
+      llmAssistConfidenceThreshold: env.LLM_ASSIST_CONFIDENCE_THRESHOLD
     },
     export: {
       tallyEndpoint: env.TALLY_ENDPOINT ?? "",

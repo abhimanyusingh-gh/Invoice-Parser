@@ -58,6 +58,47 @@ describe("HttpFieldVerifier", () => {
     );
   });
 
+  it("forwards pageImages, llmAssist, and priorCorrections in request body", async () => {
+    jest.spyOn(logger, "info").mockImplementation(() => undefined);
+    const post = jest.fn(async () => ({
+      data: {
+        parsed: { invoiceNumber: "INV-2" },
+        issues: [],
+        changedFields: ["invoiceNumber"],
+        invoiceType: "gst-tax-invoice"
+      }
+    }));
+
+    const verifier = new HttpFieldVerifier({
+      baseUrl: "http://localhost:8100",
+      timeoutMs: 5_000,
+      httpClient: { post } as never
+    });
+
+    const result = await verifier.verify({
+      parsed: {},
+      ocrText: "Invoice Number INV-2",
+      ocrBlocks: [],
+      mode: "strict",
+      hints: {
+        mimeType: "image/png",
+        vendorTemplateMatched: false,
+        fieldCandidates: {},
+        pageImages: [{ page: 1, mimeType: "image/png", dataUrl: "data:image/png;base64,abc" }],
+        llmAssist: true,
+        priorCorrections: [{ field: "currency", hint: "INR not USD", count: 2 }]
+      }
+    });
+
+    expect(result.invoiceType).toBe("gst-tax-invoice");
+    const callArgs = post.mock.calls[0] as unknown[];
+    const requestBody = callArgs?.[1] as Record<string, unknown>;
+    const hints = requestBody?.hints as Record<string, unknown>;
+    expect(hints?.pageImages).toHaveLength(1);
+    expect(hints?.llmAssist).toBe(true);
+    expect(hints?.priorCorrections).toHaveLength(1);
+  });
+
   it("returns fallback result and logs warning when verifier request fails", async () => {
     const warnSpy = jest.spyOn(logger, "warn").mockImplementation(() => undefined);
     const post = jest.fn(async () => {

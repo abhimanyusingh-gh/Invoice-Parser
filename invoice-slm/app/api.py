@@ -4,7 +4,7 @@ from typing import Any
 
 from fastapi import FastAPI, Request
 
-from .engine import normalize_blocks, normalize_candidate_map, normalize_field_regions, select_with_fallback
+from .engine import normalize_blocks, normalize_candidate_map, normalize_field_regions, select_with_fallback, extract_invoice_type
 from .providers import create_llm_provider
 from .logging import log_error, log_info, reset_correlation_id, set_correlation_id
 from .schemas import VerifyInvoiceRequest, VerifyInvoiceResponse
@@ -72,7 +72,12 @@ def verify_invoice(request: VerifyInvoiceRequest) -> VerifyInvoiceResponse:
     "ocrBlocks": blocks,
     "documentContext": request.hints.get("documentContext"),
     "vendorNameHint": request.hints.get("vendorNameHint"),
-    "vendorTemplateMatched": bool(request.hints.get("vendorTemplateMatched"))
+    "vendorTemplateMatched": bool(request.hints.get("vendorTemplateMatched")),
+    "pageImages": request.hints.get("pageImages"),
+    "llmAssist": bool(request.hints.get("llmAssist")),
+    "languageHint": request.hints.get("languageHint"),
+    "documentLanguage": request.hints.get("documentLanguage"),
+    "priorCorrections": request.hints.get("priorCorrections")
   }
 
   try:
@@ -106,9 +111,12 @@ def verify_invoice(request: VerifyInvoiceRequest) -> VerifyInvoiceResponse:
 
   deduped_issues = sorted({issue.strip() for issue in issues if issue.strip()})
 
+  invoice_type = extract_invoice_type(slm_payload)
+
   return VerifyInvoiceResponse(
     parsed=merged,
     issues=deduped_issues,
     changedFields=changed_fields,
-    reasonCodes=reason_codes
+    reasonCodes=reason_codes,
+    invoiceType=invoice_type
   )

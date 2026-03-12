@@ -21,6 +21,9 @@ export interface FieldVerifierInput {
     vendorTemplateMatched: boolean;
     fieldCandidates: Record<string, string[]>;
     fieldRegions?: Record<string, OcrBlock[]>;
+    pageImages?: Array<{ page: number; mimeType: string; dataUrl: string; width?: number; height?: number; dpi?: number }>;
+    llmAssist?: boolean;
+    priorCorrections?: Array<{ field: string; hint: string; count: number }>;
   };
 }
 
@@ -29,6 +32,7 @@ export interface FieldVerifierResult {
   issues: string[];
   changedFields: string[];
   reasonCodes?: Record<string, string>;
+  invoiceType?: string;
 }
 
 export interface FieldVerifier {

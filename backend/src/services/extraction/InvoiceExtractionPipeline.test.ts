@@ -1,7 +1,8 @@
-import type { FieldVerifier, FieldVerifierResult } from "../../core/interfaces/FieldVerifier.ts";
+import type { FieldVerifier, FieldVerifierInput, FieldVerifierResult } from "../../core/interfaces/FieldVerifier.ts";
 import type { OcrBlock, OcrExtractionOptions, OcrPageImage, OcrProvider } from "../../core/interfaces/OcrProvider.ts";
 import { InvoiceExtractionPipeline, ExtractionPipelineError } from "./InvoiceExtractionPipeline.ts";
 import { InMemoryVendorTemplateStore } from "./vendorTemplateStore.ts";
+import { InMemoryExtractionLearningStore } from "./extractionLearningStore.ts";
 
 const SAMPLE_TEXT = [
   "Invoice Number: INV-1001",
@@ -62,6 +63,32 @@ class StubFieldVerifier implements FieldVerifier {
   verify = jest.fn(async () => this.result);
 }
 
+class SequenceFieldVerifier implements FieldVerifier {
+  readonly name = "sequence-verifier";
+  private callIndex = 0;
+
+  constructor(private readonly results: FieldVerifierResult[]) {}
+
+  verify = jest.fn(async (_input: FieldVerifierInput) => {
+    const result = this.results[this.callIndex] ?? this.results[this.results.length - 1];
+    this.callIndex += 1;
+    return result;
+  });
+}
+
+class ThrowOnSecondCallVerifier implements FieldVerifier {
+  readonly name = "throw-second-verifier";
+  private callIndex = 0;
+
+  constructor(private readonly firstResult: FieldVerifierResult) {}
+
+  verify = jest.fn(async () => {
+    this.callIndex += 1;
+    if (this.callIndex === 1) return this.firstResult;
+    throw new Error("LLM assist boom");
+  });
+}
+
 function buildInput() {
   return {
     tenantId: "tenant-a",
@@ -86,7 +113,8 @@ describe("InvoiceExtractionPipeline", () => {
         confidence: 0.97
       }),
       verifier,
-      store
+      store,
+      undefined
     );
 
     const result = await pipeline.extract(buildInput());
@@ -147,7 +175,9 @@ describe("InvoiceExtractionPipeline", () => {
         ]
       }),
       verifier,
-      store
+      store,
+      undefined,
+      { llmAssistConfidenceThreshold: 0 }
     );
 
     const result = await pipeline.extract(buildInput());
@@ -197,7 +227,8 @@ describe("InvoiceExtractionPipeline", () => {
         confidence: 0.97
       }),
       verifier,
-      store
+      store,
+      undefined
     );
 
     const result = await pipeline.extract({
@@ -239,7 +270,8 @@ describe("InvoiceExtractionPipeline", () => {
         confidence: 0.97
       }),
       new StubFieldVerifier({ parsed: {}, issues: [], changedFields: [] }),
-      store
+      store,
+      undefined
     );
     const previewResult = await previewPipeline.extract(buildInput());
     const templateKey = previewResult.metadata.vendorFingerprint ?? "";
@@ -261,7 +293,8 @@ describe("InvoiceExtractionPipeline", () => {
         confidence: 0.93
       }),
       verifier,
-      store
+      store,
+      undefined
     );
 
     const result = await pipeline.extract(buildInput());
@@ -280,7 +313,8 @@ describe("InvoiceExtractionPipeline", () => {
         throwError: true
       }),
       new StubFieldVerifier({ parsed: {}, issues: [], changedFields: [] }),
-      new InMemoryVendorTemplateStore()
+      new InMemoryVendorTemplateStore(),
+      undefined
     );
 
     await expect(pipeline.extract(buildInput())).rejects.toMatchObject<Partial<ExtractionPipelineError>>({
@@ -296,7 +330,8 @@ describe("InvoiceExtractionPipeline", () => {
     const pipeline = new InvoiceExtractionPipeline(
       ocrProvider,
       new StubFieldVerifier({ parsed: {}, issues: [], changedFields: [] }),
-      new InMemoryVendorTemplateStore()
+      new InMemoryVendorTemplateStore(),
+      undefined
     );
 
     const result = await pipeline.extract({
@@ -318,7 +353,8 @@ describe("InvoiceExtractionPipeline", () => {
     const pipeline = new InvoiceExtractionPipeline(
       ocrProvider,
       new StubFieldVerifier({ parsed: {}, issues: [], changedFields: [] }),
-      new InMemoryVendorTemplateStore()
+      new InMemoryVendorTemplateStore(),
+      undefined
     );
 
     const result = await pipeline.extract({
@@ -349,6 +385,7 @@ describe("InvoiceExtractionPipeline", () => {
       ocrProvider,
       new StubFieldVerifier({ parsed: {}, issues: [], changedFields: [] }),
       new InMemoryVendorTemplateStore(),
+      undefined,
       { enableOcrKeyValueGrounding: true }
     );
     const result = await pipeline.extract(buildInput());
@@ -371,11 +408,236 @@ describe("InvoiceExtractionPipeline", () => {
       ocrProvider,
       new StubFieldVerifier({ parsed: {}, issues: [], changedFields: [] }),
       new InMemoryVendorTemplateStore(),
+      undefined,
       { enableOcrKeyValueGrounding: false }
     );
     const result = await pipeline.extract(buildInput());
 
     expect(result.attempts.some((attempt) => attempt.source === "ocr-key-value-grounding")).toBe(false);
     expect(result.attempts.some((attempt) => attempt.source === "ocr-key-value-augmented")).toBe(false);
+  });
+
+  it("triggers LLM assist when confidence is low and page images are available", async () => {
+    const learningStore = new InMemoryExtractionLearningStore();
+    const verifier = new SequenceFieldVerifier([
+      {
+        parsed: { totalAmountMinor: 8800 },
+        issues: [],
+        changedFields: ["totalAmountMinor"],
+        invoiceType: "gst-tax-invoice"
+      },
+      {
+        parsed: {
+          totalAmountMinor: 8800,
+          currency: "INR",
+          invoiceDate: "2026-02-10",
+          dueDate: "2026-02-20"
+        },
+        issues: [],
+        changedFields: ["currency", "invoiceDate", "dueDate"]
+      }
+    ]);
+
+    const pipeline = new InvoiceExtractionPipeline(
+      new StubOcrProvider({
+        text: [
+          "Invoice Number: INV-2001",
+          "Vendor: Delta Services Ltd",
+          "Invoice Date: 2026-02-10",
+          "Due Date: 2026-02-20"
+        ].join("\n"),
+        confidence: 0.42,
+        blocks: [
+          { text: "Invoice Number: INV-2001", page: 1, bbox: [10, 10, 180, 32], bboxNormalized: [0.01, 0.01, 0.18, 0.03] },
+          { text: "Vendor: Delta Services Ltd", page: 1, bbox: [10, 40, 220, 65], bboxNormalized: [0.01, 0.04, 0.22, 0.07] }
+        ],
+        pageImages: [
+          { page: 1, dataUrl: "data:image/png;base64,ZmFrZQ==", mimeType: "image/png", width: 640, height: 480 }
+        ]
+      }),
+      verifier,
+      new InMemoryVendorTemplateStore(),
+      learningStore,
+      { llmAssistConfidenceThreshold: 85 }
+    );
+
+    const result = await pipeline.extract(buildInput());
+
+    expect(verifier.verify).toHaveBeenCalledTimes(2);
+    expect(result.metadata.llmAssistApplied).toBe("true");
+    expect(result.metadata.invoiceType).toBe("gst-tax-invoice");
+
+    const secondCall = (verifier.verify as unknown as jest.Mock).mock.calls[1]?.[0] as FieldVerifierInput | undefined;
+    expect(secondCall?.mode).toBe("strict");
+    expect(secondCall?.hints?.llmAssist).toBe(true);
+    expect(secondCall?.hints?.pageImages).toHaveLength(1);
+  });
+
+  it("skips LLM assist when confidence is high", async () => {
+    const verifier = new StubFieldVerifier({
+      parsed: {},
+      issues: [],
+      changedFields: [],
+      invoiceType: "standard"
+    });
+
+    const pipeline = new InvoiceExtractionPipeline(
+      new StubOcrProvider({
+        text: SAMPLE_TEXT,
+        confidence: 0.97,
+        pageImages: [
+          { page: 1, dataUrl: "data:image/png;base64,ZmFrZQ==", mimeType: "image/png", width: 640, height: 480 }
+        ]
+      }),
+      verifier,
+      new InMemoryVendorTemplateStore(),
+      undefined,
+      { llmAssistConfidenceThreshold: 85 }
+    );
+
+    const result = await pipeline.extract(buildInput());
+
+    expect(verifier.verify).toHaveBeenCalledTimes(1);
+    expect(result.metadata.llmAssistApplied).toBeUndefined();
+  });
+
+  it("degrades gracefully when LLM assist fails", async () => {
+    const verifier = new ThrowOnSecondCallVerifier({
+      parsed: { totalAmountMinor: 8800, currency: "USD" },
+      issues: [],
+      changedFields: ["totalAmountMinor", "currency"],
+      invoiceType: "standard"
+    });
+
+    const pipeline = new InvoiceExtractionPipeline(
+      new StubOcrProvider({
+        text: [
+          "Invoice Number: INV-2001",
+          "Vendor: Delta Services Ltd",
+          "Invoice Date: 2026-02-10",
+          "Due Date: 2026-02-20"
+        ].join("\n"),
+        confidence: 0.42,
+        blocks: [
+          { text: "Invoice Number: INV-2001", page: 1, bbox: [10, 10, 180, 32], bboxNormalized: [0.01, 0.01, 0.18, 0.03] }
+        ],
+        pageImages: [
+          { page: 1, dataUrl: "data:image/png;base64,ZmFrZQ==", mimeType: "image/png", width: 640, height: 480 }
+        ]
+      }),
+      verifier,
+      new InMemoryVendorTemplateStore(),
+      undefined,
+      { llmAssistConfidenceThreshold: 85 }
+    );
+
+    const result = await pipeline.extract(buildInput());
+
+    expect(result.metadata.llmAssistApplied).toBe("false");
+    expect(result.metadata.llmAssistError).toBe("LLM assist boom");
+    expect(result.parseResult.parsed.totalAmountMinor).toBe(8800);
+  });
+
+  it("passes prior corrections from learning store to SLM verifier", async () => {
+    const learningStore = new InMemoryExtractionLearningStore();
+    await learningStore.recordCorrections("tenant-a", "other", "invoice-type", [
+      { field: "currency", hint: "Always INR not USD", count: 3, lastSeen: new Date() }
+    ]);
+
+    const verifier = new StubFieldVerifier({
+      parsed: {},
+      issues: [],
+      changedFields: [],
+      invoiceType: "standard"
+    });
+
+    const pipeline = new InvoiceExtractionPipeline(
+      new StubOcrProvider({ text: SAMPLE_TEXT, confidence: 0.97 }),
+      verifier,
+      new InMemoryVendorTemplateStore(),
+      learningStore
+    );
+
+    await pipeline.extract(buildInput());
+
+    expect(verifier.verify).toHaveBeenCalledWith(
+      expect.objectContaining({
+        hints: expect.objectContaining({
+          priorCorrections: expect.arrayContaining([
+            expect.objectContaining({ field: "currency", hint: "Always INR not USD" })
+          ])
+        })
+      })
+    );
+  });
+
+  it("boosts confidence score after successful LLM assist with vision", async () => {
+    const verifier = new SequenceFieldVerifier([
+      {
+        parsed: { totalAmountMinor: 8800 },
+        issues: [],
+        changedFields: ["totalAmountMinor"],
+        invoiceType: "gst-tax-invoice"
+      },
+      {
+        parsed: {
+          totalAmountMinor: 8800,
+          currency: "INR",
+          invoiceDate: "2026-02-10",
+          dueDate: "2026-02-20"
+        },
+        issues: [],
+        changedFields: ["currency", "invoiceDate", "dueDate"]
+      }
+    ]);
+
+    const pipeline = new InvoiceExtractionPipeline(
+      new StubOcrProvider({
+        text: [
+          "Invoice Number: INV-2001",
+          "Vendor: Delta Services Ltd",
+          "Invoice Date: 2026-02-10",
+          "Due Date: 2026-02-20"
+        ].join("\n"),
+        confidence: 0.42,
+        blocks: [
+          { text: "Invoice Number: INV-2001", page: 1, bbox: [10, 10, 180, 32], bboxNormalized: [0.01, 0.01, 0.18, 0.03] }
+        ],
+        pageImages: [
+          { page: 1, dataUrl: "data:image/png;base64,ZmFrZQ==", mimeType: "image/png", width: 640, height: 480 }
+        ]
+      }),
+      verifier,
+      new InMemoryVendorTemplateStore(),
+      new InMemoryExtractionLearningStore(),
+      { llmAssistConfidenceThreshold: 85 }
+    );
+
+    const result = await pipeline.extract(buildInput());
+
+    expect(result.metadata.llmAssistApplied).toBe("true");
+    // With OCR 0.42 and no LLM boost: score ≈ 0.42*65 + completeness*35 - penalties ≈ low
+    // With LLM boost (effective OCR 0.88): score ≈ 0.88*65 + completeness*35 - penalties ≈ much higher
+    expect(result.confidenceAssessment.score).toBeGreaterThanOrEqual(75);
+  });
+
+  it("stores invoice type in metadata from verifier response", async () => {
+    const verifier = new StubFieldVerifier({
+      parsed: {},
+      issues: [],
+      changedFields: [],
+      invoiceType: "vat-invoice"
+    });
+
+    const pipeline = new InvoiceExtractionPipeline(
+      new StubOcrProvider({ text: SAMPLE_TEXT, confidence: 0.97 }),
+      verifier,
+      new InMemoryVendorTemplateStore(),
+      undefined
+    );
+
+    const result = await pipeline.extract(buildInput());
+
+    expect(result.metadata.invoiceType).toBe("vat-invoice");
   });
 });

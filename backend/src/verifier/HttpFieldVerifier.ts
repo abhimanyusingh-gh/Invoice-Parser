@@ -15,6 +15,7 @@ interface VerifyInvoiceResponse {
   issues?: unknown;
   changedFields?: unknown;
   reasonCodes?: unknown;
+  invoiceType?: unknown;
   usage?: unknown;
   tokenUsage?: unknown;
   promptTokens?: unknown;
@@ -80,6 +81,7 @@ export class HttpFieldVerifier implements FieldVerifier {
           completionTokens: response.data?.completionTokens ?? response.data?.completion_tokens,
           totalTokens: response.data?.totalTokens ?? response.data?.total_tokens
         });
+      const invoiceType = typeof response.data?.invoiceType === "string" ? response.data.invoiceType.trim() : undefined;
       logger.info("verifier.http.request.end", {
         latencyMs: Date.now() - startedAt,
         llmPromptTokens: usage?.promptTokens,
@@ -87,14 +89,19 @@ export class HttpFieldVerifier implements FieldVerifier {
         llmTotalTokens: usage?.totalTokens,
         llmTokenUsageReturned: hasTokenUsage(usage),
         llmInputTokensApprox: estimateTextTokenCount(input.ocrText),
-        llmOutputTokensApprox: estimateTextTokenCount(JSON.stringify(response.data?.parsed ?? {}))
+        llmOutputTokensApprox: estimateTextTokenCount(JSON.stringify(response.data?.parsed ?? {})),
+        llmAssist: input.hints.llmAssist ?? false,
+        pageImageCount: input.hints.pageImages?.length ?? 0,
+        priorCorrectionCount: input.hints.priorCorrections?.length ?? 0,
+        invoiceType
       });
 
       return {
         parsed: normalizeParsed(response.data?.parsed) ?? input.parsed,
         issues: normalizeStringList(response.data?.issues),
         changedFields: normalizeStringList(response.data?.changedFields),
-        reasonCodes: normalizeReasonCodes(response.data?.reasonCodes)
+        reasonCodes: normalizeReasonCodes(response.data?.reasonCodes),
+        invoiceType
       };
     } catch (error) {
       logger.warn("verifier.http.failed", {

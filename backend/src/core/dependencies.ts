@@ -9,6 +9,7 @@ import { buildIngestionSources } from "./sourceRegistry.js";
 import { IngestionService } from "../services/ingestionService.js";
 import { InvoiceExtractionPipeline } from "../services/extraction/InvoiceExtractionPipeline.js";
 import { MongoVendorTemplateStore } from "../services/extraction/vendorTemplateStore.js";
+import { MongoExtractionLearningStore } from "../services/extraction/extractionLearningStore.js";
 import { InvoiceService } from "../services/invoiceService.js";
 import { ExportService } from "../services/exportService.js";
 import { TallyExporter } from "../services/tallyExporter.js";
@@ -57,8 +58,10 @@ export async function buildDependencies(): Promise<Dependencies> {
     ocrProvider,
     fieldVerifier,
     new MongoVendorTemplateStore(),
+    new MongoExtractionLearningStore(),
     {
-      ocrHighConfidenceThreshold: manifest.extraction.ocrHighConfidenceThreshold
+      ocrHighConfidenceThreshold: manifest.extraction.ocrHighConfidenceThreshold,
+      llmAssistConfidenceThreshold: manifest.extraction.llmAssistConfidenceThreshold
     }
   );
   const sources = buildIngestionSources(manifest.sources, {

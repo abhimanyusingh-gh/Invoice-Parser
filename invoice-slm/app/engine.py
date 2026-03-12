@@ -11,6 +11,10 @@ VENDOR_BANNED_PATTERN = re.compile(
   re.IGNORECASE
 )
 VALID_CURRENCIES = {"USD", "EUR", "GBP", "INR", "AUD", "CAD", "JPY", "AED", "SGD", "CHF", "CNY"}
+VALID_INVOICE_TYPES = {
+  "standard", "gst-tax-invoice", "vat-invoice", "receipt", "utility-bill",
+  "professional-service", "purchase-order", "credit-note", "proforma", "other"
+}
 
 
 def normalize_candidate_map(raw_value: Any) -> dict[str, list[str]]:
@@ -162,6 +166,15 @@ def select_with_fallback(
   fallback_selected, fallback_codes = heuristic_select(candidate_map, blocks, field_regions, current, mode)
   issues.append("Applied heuristic fallback for unresolved fields.")
   return apply_mode(mode, current, fallback_selected), fallback_codes, issues
+
+
+def extract_invoice_type(slm_payload: dict[str, Any] | None) -> str:
+  if slm_payload is None:
+    return "other"
+  raw = slm_payload.get("invoiceType")
+  if isinstance(raw, str) and raw.strip().lower() in VALID_INVOICE_TYPES:
+    return raw.strip().lower()
+  return "other"
 
 
 def normalize_selected_payload(value: Any) -> dict[str, Any]:

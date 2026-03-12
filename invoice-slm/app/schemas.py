@@ -15,3 +15,4 @@ class VerifyInvoiceResponse(BaseModel):
   issues: list[str]
   changedFields: list[str]
   reasonCodes: dict[str, str] = Field(default_factory=dict)
+  invoiceType: str = "other"

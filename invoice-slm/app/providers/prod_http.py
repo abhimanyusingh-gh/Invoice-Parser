@@ -51,19 +51,27 @@ class ProdHttpLLMProvider(LLMProvider):
           "fieldRegions": payload.get("fieldRegions", {}),
           "documentContext": payload.get("documentContext"),
           "vendorNameHint": payload.get("vendorNameHint"),
-          "vendorTemplateMatched": bool(payload.get("vendorTemplateMatched"))
+          "vendorTemplateMatched": bool(payload.get("vendorTemplateMatched")),
+          "pageImages": payload.get("pageImages"),
+          "llmAssist": bool(payload.get("llmAssist")),
+          "languageHint": payload.get("languageHint"),
+          "documentLanguage": payload.get("documentLanguage"),
+          "priorCorrections": payload.get("priorCorrections")
         }
       }
     )
     if not isinstance(response, dict):
       raise RuntimeError("Remote SLM returned invalid payload.")
 
+    invoice_type = response.get("invoiceType") if isinstance(response.get("invoiceType"), str) else "other"
+
     selected = response.get("selected")
     if isinstance(selected, dict):
       return {
         "selected": selected,
         "reasonCodes": response.get("reasonCodes") if isinstance(response.get("reasonCodes"), dict) else {},
-        "issues": response.get("issues") if isinstance(response.get("issues"), list) else []
+        "issues": response.get("issues") if isinstance(response.get("issues"), list) else [],
+        "invoiceType": invoice_type
       }
 
     parsed = response.get("parsed")
@@ -71,7 +79,8 @@ class ProdHttpLLMProvider(LLMProvider):
       return {
         "selected": parsed,
         "reasonCodes": response.get("reasonCodes") if isinstance(response.get("reasonCodes"), dict) else {},
-        "issues": response.get("issues") if isinstance(response.get("issues"), list) else []
+        "issues": response.get("issues") if isinstance(response.get("issues"), list) else [],
+        "invoiceType": invoice_type
       }
 
     raise RuntimeError("Remote SLM payload does not contain selected/parsed output.")

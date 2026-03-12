@@ -63,6 +63,9 @@ class LocalMlxLLMProvider(LLMProvider):
     if self.model is None or self.tokenizer is None:
       raise RuntimeError("SLM model is not initialized.")
 
+    if payload.get("llmAssist"):
+      log_info("slm.llm_assist.local_mlx_ignores_images", note="Local MLX provider does not support vision; running text-only re-extraction")
+
     for strict in (False, True):
       prompt = build_prompt(self.tokenizer, payload, strict=strict)
       output = generate(
@@ -130,22 +133,38 @@ def resolve_model_reference() -> str:
 
 
 def build_prompt(tokenizer: Any, payload: dict[str, Any], strict: bool) -> str:
+  prior_corrections = payload.get("priorCorrections")
+  prior_corrections_text = ""
+  if isinstance(prior_corrections, list) and prior_corrections:
+    parts = []
+    for entry in prior_corrections[:6]:
+      if isinstance(entry, dict) and isinstance(entry.get("field"), str) and isinstance(entry.get("hint"), str):
+        parts.append(f"{entry['field']}: {entry['hint']}")
+    if parts:
+      prior_corrections_text = " PRIOR_CORRECTIONS: " + "; ".join(parts) + "."
+
   if strict:
     instruction = (
       "Return only one minified JSON object. "
       "No markdown. No code fence. No explanation. No preamble. "
       "Schema: "
       "{\"selected\":{\"invoiceNumber\":\"\",\"vendorName\":\"\",\"currency\":\"\",\"totalAmountMinor\":0,"
-      "\"invoiceDate\":\"\",\"dueDate\":\"\"},\"reasonCodes\":{},\"issues\":[]}."
+      "\"invoiceDate\":\"\",\"dueDate\":\"\"},\"reasonCodes\":{},\"issues\":[],\"invoiceType\":\"\"}. "
+      "invoiceType must be one of: standard, gst-tax-invoice, vat-invoice, receipt, utility-bill, "
+      "professional-service, purchase-order, credit-note, proforma, other."
+      + prior_corrections_text
     )
   else:
     instruction = (
       "Use OCR text blocks and bounding boxes to choose invoice fields. "
       "Output schema must be exactly: "
       "{\"selected\":{\"invoiceNumber\":\"\",\"vendorName\":\"\",\"currency\":\"\",\"totalAmountMinor\":0,"
-      "\"invoiceDate\":\"\",\"dueDate\":\"\"},\"reasonCodes\":{},\"issues\":[]} "
+      "\"invoiceDate\":\"\",\"dueDate\":\"\"},\"reasonCodes\":{},\"issues\":[],\"invoiceType\":\"\"} "
+      "invoiceType must be one of: standard, gst-tax-invoice, vat-invoice, receipt, utility-bill, "
+      "professional-service, purchase-order, credit-note, proforma, other. "
       "Rules: vendorName cannot be an address; totalAmountMinor must be integer minor units; "
       "if unknown keep empty string or 0."
+      + prior_corrections_text
     )
 
   prompt_payload = sanitize_payload_for_prompt(payload)
@@ -183,6 +202,27 @@ def sanitize_payload_for_prompt(payload: dict[str, Any]) -> dict[str, Any]:
     return {}
 
   cloned = dict(payload)
+
+  page_images = cloned.get("pageImages")
+  if isinstance(page_images, list):
+    summaries: list[dict[str, Any]] = []
+    for entry in page_images[:3]:
+      if not isinstance(entry, dict):
+        continue
+      summary = {
+        "page": entry.get("page"),
+        "mimeType": entry.get("mimeType"),
+        "width": entry.get("width"),
+        "height": entry.get("height"),
+        "dpi": entry.get("dpi")
+      }
+      data_url = entry.get("dataUrl")
+      if isinstance(data_url, str) and data_url.startswith("data:"):
+        summary["dataUrlPreview"] = data_url[:140]
+        summary["dataUrlLength"] = len(data_url)
+      summaries.append(summary)
+    cloned["pageImages"] = summaries
+
   document_context = cloned.get("documentContext")
   if isinstance(document_context, dict):
     sanitized_context: dict[str, Any] = {}
