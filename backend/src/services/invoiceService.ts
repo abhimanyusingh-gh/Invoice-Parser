@@ -50,18 +50,31 @@ export class InvoiceService {
 
     const skip = (params.page - 1) * params.limit;
 
-    const [items, total, totalAll, approvedAll, pendingAll] = await Promise.all([
+    const [items, counts] = await Promise.all([
       InvoiceModel.find(query)
         .select({ ocrText: 0, ocrBlocks: 0 })
         .sort({ createdAt: -1 })
         .skip(skip)
         .limit(params.limit)
         .lean(),
-      InvoiceModel.countDocuments(query),
-      InvoiceModel.countDocuments(baseQuery),
-      InvoiceModel.countDocuments({ ...baseQuery, status: "APPROVED" }),
-      InvoiceModel.countDocuments({ ...baseQuery, status: { $in: ["PARSED", "NEEDS_REVIEW"] } })
+      InvoiceModel.aggregate([
+        { $match: baseQuery },
+        {
+          $facet: {
+            totalAll: [{ $count: "n" }],
+            approved: [{ $match: { status: "APPROVED" } }, { $count: "n" }],
+            pending: [{ $match: { status: { $in: ["PARSED", "NEEDS_REVIEW"] } } }, { $count: "n" }],
+            ...(params.status ? { filtered: [{ $match: { status: params.status } }, { $count: "n" }] } : {})
+          }
+        }
+      ])
     ]);
+
+    const facet = counts[0] ?? {};
+    const totalAll = facet.totalAll?.[0]?.n ?? 0;
+    const approvedAll = facet.approved?.[0]?.n ?? 0;
+    const pendingAll = facet.pending?.[0]?.n ?? 0;
+    const total = params.status ? (facet.filtered?.[0]?.n ?? 0) : totalAll;
 
     return {
       items: items.map((item) => sanitizeForApi(item)),

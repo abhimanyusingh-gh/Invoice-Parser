@@ -612,20 +612,26 @@ function detectChangedFields(before: ParsedInvoiceData, after: ParsedInvoiceData
 
 function isSameValue(left: unknown, right: unknown): boolean {
   if (Array.isArray(left) || Array.isArray(right)) {
-    return JSON.stringify(left ?? []) === JSON.stringify(right ?? []);
+    const a = Array.isArray(left) ? left : [];
+    const b = Array.isArray(right) ? right : [];
+    if (a.length !== b.length) return false;
+    for (let i = 0; i < a.length; i++) {
+      if (a[i] !== b[i]) return false;
+    }
+    return true;
   }
   return left === right;
 }
 
+const ADDRESS_RE = /\b(address|warehouse|village|road|street|taluk|district|postal|zip)\b/i;
+const WEAK_VENDOR_RE = /\b(currency|invoice|total|amount|date|due|tax|gst|vat|number)\b/i;
+
 function looksLikeAddress(value: string): boolean {
-  return /\b(address|warehouse|village|road|street|taluk|district|postal|zip)\b/i.test(value);
+  return ADDRESS_RE.test(value);
 }
 
 function isWeakVendorValue(value: string): boolean {
-  return (
-    looksLikeAddress(value) ||
-    /\b(currency|invoice|total|amount|date|due|tax|gst|vat|number)\b/i.test(value)
-  );
+  return looksLikeAddress(value) || WEAK_VENDOR_RE.test(value);
 }
 
 function buildFieldCandidates(
@@ -737,9 +743,16 @@ function candidateTerms(field: string, value: string): string[] {
   const majorNoDecimals = Number.isInteger(minor / 100) ? String(Math.round(minor / 100)) : "";
   const normalizedMajor = major.replace(/\.00$/, "");
 
-  return [base, major, normalizedMajor, majorNoDecimals]
-    .map((entry) => entry.trim().toLowerCase())
-    .filter((entry, index, all) => entry.length > 0 && all.indexOf(entry) === index);
+  const terms: string[] = [];
+  const seen = new Set<string>();
+  for (const raw of [base, major, normalizedMajor, majorNoDecimals]) {
+    const entry = raw.trim().toLowerCase();
+    if (entry.length > 0 && !seen.has(entry)) {
+      seen.add(entry);
+      terms.push(entry);
+    }
+  }
+  return terms;
 }
 
 function collectMatches(text: string, pattern: RegExp): string[] {

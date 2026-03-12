@@ -197,9 +197,12 @@ describe("ExportService", () => {
 
   describe("generateExportFile", () => {
     it("passes tenantId to ExportBatchModel.create", async () => {
-      jest.spyOn(InvoiceModel, "find").mockResolvedValue([
-        { _id: new Types.ObjectId(), status: "APPROVED", save: jest.fn() }
-      ] as never);
+      jest.spyOn(InvoiceModel, "find").mockReturnValue({
+        select: jest.fn().mockResolvedValue([
+          { _id: new Types.ObjectId(), status: "APPROVED" }
+        ])
+      } as never);
+      jest.spyOn(InvoiceModel, "updateOne").mockResolvedValue({} as never);
 
       const createSpy = jest.spyOn(ExportBatchModel, "create").mockResolvedValue({
         _id: new Types.ObjectId()
@@ -217,7 +220,7 @@ describe("ExportService", () => {
     });
 
     it("returns empty result when no approved invoices exist", async () => {
-      jest.spyOn(InvoiceModel, "find").mockResolvedValue([] as never);
+      jest.spyOn(InvoiceModel, "find").mockReturnValue({ select: jest.fn().mockResolvedValue([]) } as never);
 
       const service = new ExportService(createMockExporter(), createMockFileStore());
       const result = await service.generateExportFile({
@@ -230,9 +233,12 @@ describe("ExportService", () => {
     });
 
     it("stores file via fileStore with correct key pattern", async () => {
-      jest.spyOn(InvoiceModel, "find").mockResolvedValue([
-        { _id: new Types.ObjectId(), status: "APPROVED", save: jest.fn() }
-      ] as never);
+      jest.spyOn(InvoiceModel, "find").mockReturnValue({
+        select: jest.fn().mockResolvedValue([
+          { _id: new Types.ObjectId(), status: "APPROVED" }
+        ])
+      } as never);
+      jest.spyOn(InvoiceModel, "updateOne").mockResolvedValue({} as never);
       jest.spyOn(ExportBatchModel, "create").mockResolvedValue({
         _id: new Types.ObjectId()
       } as never);
@@ -257,11 +263,12 @@ describe("ExportService", () => {
     it("passes tenantId to ExportBatchModel.create", async () => {
       const mockInvoice = {
         _id: new Types.ObjectId(),
-        status: "APPROVED",
-        save: jest.fn(),
-        get: jest.fn().mockReturnValue([])
+        status: "APPROVED"
       };
-      jest.spyOn(InvoiceModel, "find").mockResolvedValue([mockInvoice] as never);
+      jest.spyOn(InvoiceModel, "find").mockReturnValue({
+        select: jest.fn().mockResolvedValue([mockInvoice])
+      } as never);
+      jest.spyOn(InvoiceModel, "updateOne").mockResolvedValue({} as never);
 
       const exporter = createMockExporter({
         exportInvoices: jest.fn(async () => [
@@ -284,7 +291,7 @@ describe("ExportService", () => {
     });
 
     it("returns zero totals when no approved invoices exist", async () => {
-      jest.spyOn(InvoiceModel, "find").mockResolvedValue([] as never);
+      jest.spyOn(InvoiceModel, "find").mockReturnValue({ select: jest.fn().mockResolvedValue([]) } as never);
 
       const service = new ExportService(createMockExporter());
       const result = await service.exportApprovedInvoices({

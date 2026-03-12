@@ -38,7 +38,7 @@ export class ExportService {
       };
     }
 
-    const invoices = await InvoiceModel.find(query);
+    const invoices = await InvoiceModel.find(query).select({ ocrText: 0 });
     if (invoices.length === 0) {
       logger.info("export.run.complete", {
         targetSystem: this.exporter.system,
@@ -70,36 +70,35 @@ export class ExportService {
     });
 
     const resultMap = new Map(results.map((item) => [item.invoiceId, item]));
+    const batchId = String(batch._id);
 
-    const saveResults = await Promise.allSettled(
-      invoices.map(async (invoice) => {
-        const result = resultMap.get(String(invoice._id));
-        if (!result) {
-          return;
-        }
+    const saveResults = await saveBatch(invoices, EXPORT_SAVE_CONCURRENCY, async (invoice) => {
+      const result = resultMap.get(String(invoice._id));
+      if (!result) {
+        return;
+      }
 
-        if (result.success) {
-          invoice.status = "EXPORTED";
-          invoice.export = {
-            system: this.exporter.system,
-            batchId: String(batch._id),
-            exportedAt: new Date(),
-            externalReference: result.externalReference
-          };
-        } else {
-          invoice.export = {
-            system: this.exporter.system,
-            batchId: String(batch._id),
-            exportedAt: new Date(),
-            error: result.error
-          };
-          const existingIssues = (invoice.get("processingIssues") as string[] | undefined) ?? [];
-          invoice.set("processingIssues", [...existingIssues, `Export failure: ${result.error}`]);
-        }
+      const update: Record<string, unknown> = {};
+      if (result.success) {
+        update.status = "EXPORTED";
+        update.export = {
+          system: this.exporter.system,
+          batchId,
+          exportedAt: new Date(),
+          externalReference: result.externalReference
+        };
+      } else {
+        update.export = {
+          system: this.exporter.system,
+          batchId,
+          exportedAt: new Date(),
+          error: result.error
+        };
+        update.$push = { processingIssues: `Export failure: ${result.error}` };
+      }
 
-        await invoice.save();
-      })
-    );
+      await InvoiceModel.updateOne({ _id: invoice._id }, update);
+    });
     for (const r of saveResults) {
       if (r.status === "rejected") {
         logger.error("export.invoice.save.failed", {
@@ -143,7 +142,7 @@ export class ExportService {
       };
     }
 
-    const invoices = await InvoiceModel.find(query);
+    const invoices = await InvoiceModel.find(query).select({ ocrText: 0 });
     if (invoices.length === 0) {
       return {
         batchId: undefined,
@@ -180,21 +179,24 @@ export class ExportService {
     });
 
     const skippedIds = new Set(fileResult.skippedItems.map((item) => item.invoiceId));
-    const fileSaveResults = await Promise.allSettled(
-      invoices.map(async (invoice) => {
-        if (skippedIds.has(String(invoice._id))) {
-          return;
+    const batchId = String(batch._id);
+    const fileSaveResults = await saveBatch(invoices, EXPORT_SAVE_CONCURRENCY, async (invoice) => {
+      if (skippedIds.has(String(invoice._id))) {
+        return;
+      }
+      await InvoiceModel.updateOne(
+        { _id: invoice._id },
+        {
+          status: "EXPORTED",
+          export: {
+            system: this.exporter.system,
+            batchId,
+            exportedAt: new Date(),
+            externalReference: fileKey
+          }
         }
-        invoice.status = "EXPORTED";
-        invoice.export = {
-          system: this.exporter.system,
-          batchId: String(batch._id),
-          exportedAt: new Date(),
-          externalReference: fileKey
-        };
-        await invoice.save();
-      })
-    );
+      );
+    });
     for (const r of fileSaveResults) {
       if (r.status === "rejected") {
         logger.error("export.file.invoice.save.failed", {
@@ -269,4 +271,20 @@ export class ExportService {
     const filename = batch.fileKey.split("/").pop() ?? "tally-export.xml";
     return { ...file, filename };
   }
+}
+
+const EXPORT_SAVE_CONCURRENCY = 20;
+
+async function saveBatch<T>(
+  items: T[],
+  concurrency: number,
+  fn: (item: T) => Promise<void>
+): Promise<PromiseSettledResult<void>[]> {
+  const results: PromiseSettledResult<void>[] = [];
+  for (let offset = 0; offset < items.length; offset += concurrency) {
+    const batch = items.slice(offset, offset + concurrency);
+    const settled = await Promise.allSettled(batch.map(fn));
+    results.push(...settled);
+  }
+  return results;
 }
