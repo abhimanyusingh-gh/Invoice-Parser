@@ -220,6 +220,51 @@ describe("local full-stack ingestion e2e", () => {
     expect(invoicesResponse.data.total).toBe(expectedFiles.length);
   });
 
+  it("PATCH preserves existing parsed fields when updating a single field", async () => {
+    const listResponse = await api.get<InvoiceListResponse>("/api/invoices?page=1&limit=500");
+    expect(listResponse.status).toBe(200);
+    const target = listResponse.data.items.find(
+      (inv) => inv.parsed?.vendorName && inv.parsed?.invoiceNumber
+    );
+    if (!target) {
+      return;
+    }
+
+    const beforeResponse = await api.get(`/api/invoices/${target._id}`);
+    expect(beforeResponse.status).toBe(200);
+    const fieldsBefore = beforeResponse.data.parsed ?? {};
+
+    const patch = await api.patch(`/api/invoices/${target._id}`, {
+      parsed: { vendorName: "Updated Vendor E2E" },
+      updatedBy: "e2e-merge-test"
+    });
+    expect(patch.status).toBe(200);
+
+    const afterResponse = await api.get(`/api/invoices/${target._id}`);
+    expect(afterResponse.status).toBe(200);
+    const fieldsAfter = afterResponse.data.parsed ?? {};
+
+    expect(fieldsAfter.vendorName).toBe("Updated Vendor E2E");
+    if (fieldsBefore.invoiceNumber) {
+      expect(fieldsAfter.invoiceNumber).toBe(fieldsBefore.invoiceNumber);
+    }
+    if (fieldsBefore.invoiceDate) {
+      expect(fieldsAfter.invoiceDate).toBe(fieldsBefore.invoiceDate);
+    }
+    if (fieldsBefore.totalAmountMinor != null) {
+      expect(fieldsAfter.totalAmountMinor).toBe(fieldsBefore.totalAmountMinor);
+    }
+    if (fieldsBefore.currency) {
+      expect(fieldsAfter.currency).toBe(fieldsBefore.currency);
+    }
+
+    // Restore original vendor name
+    await api.patch(`/api/invoices/${target._id}`, {
+      parsed: { vendorName: fieldsBefore.vendorName ?? null },
+      updatedBy: "e2e-merge-test-restore"
+    });
+  });
+
   it("changes NEEDS_REVIEW invoices to APPROVED via API", async () => {
     const listResponse = await api.get<InvoiceListResponse>("/api/invoices?page=1&limit=500&status=NEEDS_REVIEW");
     expect(listResponse.status).toBe(200);
@@ -239,6 +284,8 @@ describe("local full-stack ingestion e2e", () => {
     expect(updated.status).toBe(200);
     expect(updated.data?.status).toBe("APPROVED");
     expect(updated.data?.approval?.approvedBy).toBe("e2e-approver");
+    expect(typeof updated.data?.approval?.userId).toBe("string");
+    expect(typeof updated.data?.approval?.email).toBe("string");
   });
 });
 
