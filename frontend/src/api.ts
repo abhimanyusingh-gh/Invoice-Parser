@@ -269,6 +269,11 @@ export async function deleteInvoices(ids: string[]) {
   return response.data;
 }
 
+export async function retryInvoices(ids: string[]) {
+  const response = await apiClient.post<{ modifiedCount: number }>("/invoices/retry", { ids });
+  return response.data;
+}
+
 export async function exportToTally(ids?: string[]) {
   const response = await apiClient.post<TallyExportResponse>("/exports/tally", {
     ids,

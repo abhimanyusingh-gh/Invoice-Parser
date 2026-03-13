@@ -85,6 +85,23 @@ export function createInvoiceRouter(invoiceService: InvoiceService, fileStore?: 
     }
   });
 
+  router.post("/invoices/retry", async (req, res, next) => {
+    try {
+      const authContext = req.authContext!;
+      const ids = Array.isArray(req.body?.ids) ? req.body.ids.filter(isString) : [];
+
+      if (ids.length === 0) {
+        res.status(400).json({ message: "Body 'ids' must include at least one invoice id." });
+        return;
+      }
+
+      const modifiedCount = await invoiceService.retryInvoices(ids, authContext);
+      res.json({ modifiedCount });
+    } catch (error) {
+      next(error);
+    }
+  });
+
   router.post("/invoices/delete", async (req, res, next) => {
     try {
       const authContext = req.authContext!;

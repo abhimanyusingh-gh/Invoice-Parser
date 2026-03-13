@@ -151,6 +151,33 @@ export class InvoiceService {
     return result.modifiedCount;
   }
 
+  async retryInvoices(ids: string[], authContext: AuthenticatedRequestContext) {
+    const validIds = toObjectIds(ids);
+    if (validIds.length === 0) {
+      return 0;
+    }
+
+    const now = new Date();
+    const result = await InvoiceModel.updateMany(
+      {
+        _id: { $in: validIds },
+        tenantId: authContext.tenantId,
+        status: { $ne: "EXPORTED" }
+      },
+      {
+        $set: { status: "PENDING" },
+        $push: {
+          processingIssues: {
+            $each: [`Retry requested: ${now.toISOString()} by ${authContext.email}`],
+            $slice: -50
+          }
+        }
+      }
+    );
+
+    return result.modifiedCount;
+  }
+
   async deleteInvoices(ids: string[], authContext: AuthenticatedRequestContext) {
     const validIds = toObjectIds(ids);
     if (validIds.length === 0) {
