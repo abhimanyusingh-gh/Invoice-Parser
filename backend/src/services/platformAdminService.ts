@@ -89,7 +89,7 @@ export class PlatformAdminService {
     });
 
     if (this.emailSender) {
-      const verifyUrl = `${env.INVITE_BASE_URL}/auth/verify-email?token=${verificationToken}`;
+      const verifyUrl = `${env.INVITE_BASE_URL}/api/auth/verify-email?token=${verificationToken}`;
       await this.emailSender.send({
         from: env.INVITE_FROM,
         to: adminEmail,

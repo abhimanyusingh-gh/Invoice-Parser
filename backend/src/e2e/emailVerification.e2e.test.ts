@@ -71,7 +71,7 @@ describe("email verification e2e", () => {
     expect((userBefore as Record<string, unknown>).emailVerified).toBeFalsy();
 
     // 6. Call verification link
-    const verifyResponse = await api.get(`/auth/verify-email?token=${token}`);
+    const verifyResponse = await api.get(`/api/auth/verify-email?token=${token}`);
     // Should redirect (302) or follow to final URL
     expect([200, 302]).toContain(verifyResponse.status);
     if (verifyResponse.status === 302) {

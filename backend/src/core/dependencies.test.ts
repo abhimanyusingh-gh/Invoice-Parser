@@ -33,7 +33,7 @@ const mockEnv = {
   EMAIL_SIMULATION_SAMPLE_DIR: "",
   GMAIL_OAUTH_CLIENT_ID: "",
   GMAIL_OAUTH_CLIENT_SECRET: "",
-  GMAIL_OAUTH_REDIRECT_URI: "http://localhost:4100/connect/gmail/callback",
+  GMAIL_OAUTH_REDIRECT_URI: "http://localhost:4100/api/connect/gmail/callback",
   GMAIL_OAUTH_AUTH_URL: "https://accounts.google.com/o/oauth2/v2/auth",
   GMAIL_OAUTH_TOKEN_URL: "https://oauth2.googleapis.com/token",
   GMAIL_OAUTH_USERINFO_URL: "https://openidconnect.googleapis.com/v1/userinfo",

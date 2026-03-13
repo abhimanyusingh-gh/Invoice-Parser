@@ -62,7 +62,7 @@ describe("tenant lifecycle e2e", () => {
     expect(tenantUsage.adminTempPassword).toBe(tempPassword);
 
     // 3. Login with temp password
-    const loginResponse = await api.post("/auth/token", {
+    const loginResponse = await api.post("/api/auth/token", {
       email: adminEmail,
       password: tempPassword
     });
@@ -79,7 +79,7 @@ describe("tenant lifecycle e2e", () => {
     // 5. Change password
     const newPassword = `NewPass!${uniqueSuffix}`;
     const changeResponse = await api.post(
-      "/auth/change-password",
+      "/api/auth/change-password",
       { currentPassword: tempPassword, newPassword },
       { headers: { Authorization: `Bearer ${tempToken}` } }
     );
@@ -87,14 +87,14 @@ describe("tenant lifecycle e2e", () => {
     expect(changeResponse.data.success).toBe(true);
 
     // 6. Login with OLD password should fail
-    const oldLoginResponse = await api.post("/auth/token", {
+    const oldLoginResponse = await api.post("/api/auth/token", {
       email: adminEmail,
       password: tempPassword
     });
     expect(oldLoginResponse.status).toBe(401);
 
     // 7. Login with NEW password
-    const newLoginResponse = await api.post("/auth/token", {
+    const newLoginResponse = await api.post("/api/auth/token", {
       email: adminEmail,
       password: newPassword
     });
