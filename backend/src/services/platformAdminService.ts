@@ -22,6 +22,8 @@ interface TenantUsageOverview {
   gmailConnectionState: "CONNECTED" | "NEEDS_REAUTH" | "DISCONNECTED";
   adminTempPassword?: string;
   adminEmail?: string;
+  ocrTokensTotal: number;
+  slmTokensTotal: number;
   lastIngestedAt: string | null;
   createdAt: string;
 }
@@ -118,6 +120,8 @@ export class PlatformAdminService {
         needsReviewDocuments: number;
         failedDocuments: number;
         lastIngestedAt: Date | null;
+        ocrTokensTotal: number;
+        slmTokensTotal: number;
       }>([
         {
           $group: {
@@ -148,7 +152,9 @@ export class PlatformAdminService {
                 $cond: [{ $in: ["$status", ["FAILED_OCR", "FAILED_PARSE"]] }, 1, 0]
               }
             },
-            lastIngestedAt: { $max: "$createdAt" }
+            lastIngestedAt: { $max: "$createdAt" },
+            ocrTokensTotal: { $sum: { $ifNull: ["$ocrTokens", 0] } },
+            slmTokensTotal: { $sum: { $ifNull: ["$slmTokens", 0] } }
           }
         }
       ]),
@@ -194,6 +200,8 @@ export class PlatformAdminService {
         exportedDocuments: invoice?.exportedDocuments ?? 0,
         needsReviewDocuments: invoice?.needsReviewDocuments ?? 0,
         failedDocuments: invoice?.failedDocuments ?? 0,
+        ocrTokensTotal: invoice?.ocrTokensTotal ?? 0,
+        slmTokensTotal: invoice?.slmTokensTotal ?? 0,
         gmailConnectionState:
           gmailStatus === "connected" ? "CONNECTED" : gmailStatus === "requires_reauth" ? "NEEDS_REAUTH" : "DISCONNECTED",
         lastIngestedAt: invoice?.lastIngestedAt ? new Date(invoice.lastIngestedAt).toISOString() : null,

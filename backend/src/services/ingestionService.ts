@@ -352,7 +352,8 @@ export class IngestionService {
         sourceType: file.sourceType, tenantId: file.tenantId, workloadTier: file.workloadTier,
         sourceKey: file.sourceKey, sourceDocumentId: file.sourceDocumentId,
         attachmentName: file.attachmentName, mimeType: normalizedMimeType,
-        receivedAt: file.receivedAt, ocrProvider, ocrText, ocrConfidence, ocrBlocks
+        receivedAt: file.receivedAt, ocrProvider, ocrText, ocrConfidence, ocrBlocks,
+        ocrTokens: extraction.ocrTokens, slmTokens: extraction.slmTokens
       };
 
       const successData = {
@@ -411,9 +412,10 @@ export class IngestionService {
 }
 
 async function upsertFromPending(file: IngestedFile, data: Record<string, unknown>): Promise<void> {
+  const { attachmentName: _keep, ...updateData } = data;
   const updated = await InvoiceModel.findOneAndUpdate(
     { tenantId: file.tenantId, sourceDocumentId: file.sourceDocumentId, status: "PENDING" },
-    { $set: data }
+    { $set: updateData }
   );
   if (!updated) {
     await InvoiceModel.create(data);

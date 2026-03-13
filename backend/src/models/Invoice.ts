@@ -64,6 +64,8 @@ const invoiceSchema = new Schema(
     ocrText: { type: String },
     ocrConfidence: { type: Number },
     ocrBlocks: { type: [ocrBlockSchema], default: [] },
+    ocrTokens: { type: Number },
+    slmTokens: { type: Number },
     confidenceScore: { type: Number, default: 0 },
     confidenceTone: { type: String, enum: ConfidenceTones, default: "red" },
     autoSelectForApproval: { type: Boolean, default: false },

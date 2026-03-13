@@ -79,6 +79,8 @@ export interface PlatformTenantUsageSummary {
   createdAt: string;
   adminTempPassword?: string;
   adminEmail?: string;
+  ocrTokensTotal: number;
+  slmTokensTotal: number;
 }
 
 interface PlatformTenantOnboardResult {
