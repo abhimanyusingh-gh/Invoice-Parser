@@ -6,6 +6,8 @@ import { assessInvoiceConfidence } from "./confidenceAssessment.js";
 import { toMinorUnits } from "../utils/currency.js";
 import type { WorkloadTier } from "../types/tenant.js";
 import type { AuthenticatedRequestContext } from "../types/auth.js";
+import type { FileStore } from "../core/interfaces/FileStore.js";
+import { logger } from "../utils/logger.js";
 
 interface ListInvoicesParams {
   status?: string;
@@ -37,6 +39,12 @@ export class InvoiceUpdateError extends Error {
 }
 
 export class InvoiceService {
+  private readonly fileStore?: FileStore;
+
+  constructor(options?: { fileStore?: FileStore }) {
+    this.fileStore = options?.fileStore;
+  }
+
   async listInvoices(params: ListInvoicesParams) {
     const baseQuery: Record<string, unknown> = { tenantId: params.tenantId };
     if (params.workloadTier) {
@@ -184,11 +192,38 @@ export class InvoiceService {
       return 0;
     }
 
-    const result = await InvoiceModel.deleteMany({
+    const filter = {
       _id: { $in: validIds },
       tenantId: authContext.tenantId,
       status: { $ne: "EXPORTED" }
-    });
+    };
+
+    let storageKeys: string[] = [];
+    if (this.fileStore) {
+      const docs = await InvoiceModel.find(filter).select({ metadata: 1 }).lean();
+      storageKeys = docs
+        .map((doc) => {
+          const meta = doc.metadata as Map<string, string> | Record<string, string> | undefined;
+          if (meta instanceof Map) return meta.get("uploadKey");
+          return typeof meta === "object" && meta !== null ? (meta as Record<string, string>).uploadKey : undefined;
+        })
+        .filter((key): key is string => typeof key === "string" && key.length > 0);
+    }
+
+    const result = await InvoiceModel.deleteMany(filter);
+
+    if (this.fileStore && storageKeys.length > 0) {
+      for (const key of storageKeys) {
+        try {
+          await this.fileStore.deleteObject(key);
+        } catch (error) {
+          logger.warn("invoice.delete.storage.cleanup.failed", {
+            key,
+            error: error instanceof Error ? error.message : String(error)
+          });
+        }
+      }
+    }
 
     return result.deletedCount;
   }

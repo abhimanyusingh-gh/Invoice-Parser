@@ -73,7 +73,7 @@ export async function buildDependencies(): Promise<Dependencies> {
     pipeline: extractionPipeline,
     fileStore
   });
-  const invoiceService = new InvoiceService();
+  const invoiceService = new InvoiceService({ fileStore });
   const emailSimulationService = new EmailSimulationService();
 
   const exporter = buildExporter(manifest);
