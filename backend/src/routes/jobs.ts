@@ -37,7 +37,7 @@ function broadcastToSubscribers(tenantId: string, status: IngestionJobStatus): v
   }
 }
 
-const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 20 * 1024 * 1024 } });
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 20 * 1024 * 1024, files: 50 } });
 
 export function createJobsRouter(ingestionService: IngestionService, emailSimulationService?: EmailSimulationService, fileStore?: FileStore) {
   const router = Router();
@@ -118,7 +118,21 @@ export function createJobsRouter(ingestionService: IngestionService, emailSimula
     }
   });
 
-  router.post("/jobs/upload", upload.array("files", 20) as unknown as import("express").RequestHandler, async (request, response, next) => {
+  router.post("/jobs/upload", (request, response, next) => {
+    const uploadMiddleware = upload.array("files", 50) as unknown as import("express").RequestHandler;
+    uploadMiddleware(request, response, (error: unknown) => {
+      if (error instanceof multer.MulterError) {
+        const userMessage = multerErrorMessage(error);
+        response.status(400).json({ message: userMessage });
+        return;
+      }
+      if (error) {
+        next(error);
+        return;
+      }
+      next();
+    });
+  }, async (request, response, next) => {
     try {
       const context = request.authContext!;
       if (!fileStore) {
@@ -291,4 +305,21 @@ function startIngestionJob(ingestionService: IngestionService, tenantId: string)
     });
 
   return runningStatus;
+}
+
+function multerErrorMessage(error: multer.MulterError): string {
+  switch (error.code) {
+    case "LIMIT_FILE_SIZE":
+      return "One or more files exceed the 20 MB size limit. Please upload smaller files.";
+    case "LIMIT_FILE_COUNT":
+    case "LIMIT_UNEXPECTED_FILE":
+      return "You can upload up to 50 files at a time. Please select fewer files and try again.";
+    case "LIMIT_FIELD_KEY":
+    case "LIMIT_FIELD_VALUE":
+    case "LIMIT_FIELD_COUNT":
+    case "LIMIT_PART_COUNT":
+      return "The upload request was too large. Please try again with fewer files.";
+    default:
+      return "File upload failed. Please try again.";
+  }
 }
